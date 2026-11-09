@@ -129,7 +129,9 @@ void main() {
     final motor = nuevoMotor();
     await motor.iniciar();
     expect(motor.emparejado, isFalse);
-    expect(() => motor.emparejar('{"url": "http://x.com", "db": "", "codigo": "bueno"}'), throwsA(isA<ApiError>()));
+    expect(DatosQr.leer('{"url": "http://x.com/", "db": "", "codigo": "c"}').url, 'https://x.com',
+        reason: 'Fuera de desarrollo, http:// se cambia a https://');
+    expect(() => motor.emparejar('{"url": "ftp://x.com", "db": "", "codigo": "bueno"}'), throwsA(isA<ApiError>()));
     expect(() => motor.emparejar('hola'), throwsA(isA<ApiError>()));
     await expectLater(motor.emparejar(qr.replaceFirst('bueno', 'malo')), throwsA(isA<ApiError>()));
     expect(motor.emparejado, isFalse);

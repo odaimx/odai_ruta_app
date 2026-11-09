@@ -46,7 +46,10 @@ class DatosQr {
     if (json is! Map || json['url'] is! String || json['codigo'] is! String) {
       throw ApiError('datos', 'Ese código QR no es de Odai Ruta.');
     }
-    final url = (json['url'] as String).trim().replaceAll(RegExp(r'/+$'), '');
+    var url = (json['url'] as String).trim().replaceAll(RegExp(r'/+$'), '');
+    // Detrás de un proxy, Odoo a veces anota su dirección con http://. Fuera de desarrollo la app siempre
+    // usa https:// (si el servidor no lo tiene, simplemente no conecta: nunca se manda nada sin cifrar).
+    if (!permitirHttp && url.startsWith('http://')) url = 'https://${url.substring(7)}';
     validarUrl(url, permitirHttp: permitirHttp);
     return DatosQr(url, (json['db'] as String?) ?? '', json['codigo'] as String);
   }
