@@ -139,11 +139,13 @@ class Cola {
   /// pedidos y cobros).
   Future<String> agregar(String tipo, Map<String, Object?> datos, {String? uuid}) async {
     final id = uuid ?? const Uuid().v4();
+    final capturado = horaOdoo(_reloj());
     await _db.insert('cola', {
       'uuid': id,
       'tipo': tipo,
-      'capturado': horaOdoo(_reloj()),
-      'datos': jsonEncode({...datos, 'uuid': id}),
+      'capturado': capturado,
+      // `capturado` también en los datos: Odoo cuenta el día de la visita por la hora en que se capturó.
+      'datos': jsonEncode({'capturado': capturado, ...datos, 'uuid': id}),
     });
     return id;
   }

@@ -108,6 +108,16 @@ class Motor extends ChangeNotifier {
 
   bool get puedeVender => motivoNoVender == null;
 
+  DateTime? _ultimaConexion;
+
+  /// Hubo comunicación con Odoo hace poco: lo que se capture ahora se trata como "con señal" (Odoo puede
+  /// rechazarlo en el momento); si no, como "sin señal" (ya se le vendió o cobró al cliente: nunca se rechaza
+  /// por crédito ni por cobrar de más).
+  bool get conSenal {
+    final u = _ultimaConexion;
+    return u != null && reloj().difference(u) < const Duration(minutes: 2);
+  }
+
   // ---------------------------------------------------------------- inicio y emparejamiento
 
   Api _nuevaApi(String url, String db, String? token) =>
@@ -265,6 +275,7 @@ class Motor extends ChangeNotifier {
       if (!bloqueado) await _bajar(resincronizar);
       _estado['ultima_sync'] = horaOdoo(reloj());
     } on SinSenal {
+      _ultimaConexion = null;
       ultimoError = 'Sin señal. Lo capturado está guardado en el celular y se enviará después.';
     } on ApiError catch (e) {
       switch (e.codigo) {
@@ -293,6 +304,7 @@ class Motor extends ChangeNotifier {
       'comandos_hechos': hechos,
     });
     noAutorizado = false;
+    _ultimaConexion = reloj();
     // Con señal y el servidor de acuerdo, el bloqueo por PIN equivocado se levanta.
     _estado
       ..['bloqueo_pin'] = false

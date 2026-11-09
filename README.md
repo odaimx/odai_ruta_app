@@ -21,7 +21,22 @@ App Flutter del vendedor para trabajar **sin internet primero** contra Odoo 20 c
   token y llave).
 - **Bajada incremental:** catálogo y precios solo bajan si cambiaron.
 
-Siguiente: pantallas del vendedor (ruta, cliente, pedido, cobro, sin venta, cierre).
+## Pantallas del vendedor
+
+- **Ruta:** clientes de la jornada, pendientes primero; buscador; lo que espera envío se marca "por enviar".
+  Botón Cerrar jornada.
+- **Cliente:** crédito ("Para vender", descontando lo pedido sin señal), saldo por cobrar, pedidos con sus líneas.
+- **Pedido:** buscar o escanear (código de barras de pieza o de embalaje), carrito con embalajes, precio de la
+  lista del cliente (el vendedor no lo cambia), contado o crédito, "Quiere factura", nota. Si pasa del crédito
+  avisa; Odoo lo deja retenido. Al vender de contado: cambio y, si está activado, cobro como anticipo.
+- **Cobro:** facturas abiertas (descontando cobros por enviar), forma de pago, monto, referencia. Con señal no
+  deja cobrar de más; sin señal avisa que el excedente queda a favor del cliente.
+- **Sin venta:** motivo y nota.
+
+Todo se guarda primero en el celular. Lo que se captura sin comunicación reciente con Odoo va marcado
+`sin_senal` (Odoo no lo rechaza por crédito ni por cobrar de más; lo deja para la oficina).
+
+Aún no: combos (se venden desde la pantalla web), datos fiscales desde el celular, mapa y GPS.
 
 ## Compilar
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../base_local.dart';
 import '../motor.dart';
+import 'ruta.dart';
 
 String _fechaLocal(DateTime? utc) {
   if (utc == null) return 'nunca';
@@ -116,7 +117,7 @@ class _PantallaInicioState extends State<PantallaInicio> {
                 child: Text('No hay jornadas abiertas en el celular. Conéctese a internet y sincronice; si sigue '
                     'sin aparecer, pida al supervisor que revise su ruta.'),
               ),
-            for (final datos in _jornadas) _TarjetaJornada(datos: datos),
+            for (final datos in _jornadas) _TarjetaJornada(motor: motor, datos: datos),
           ],
         ),
       ),
@@ -136,8 +137,9 @@ class _Aviso extends StatelessWidget {
 }
 
 class _TarjetaJornada extends StatelessWidget {
-  const _TarjetaJornada({required this.datos});
+  const _TarjetaJornada({required this.motor, required this.datos});
 
+  final Motor motor;
   final Map datos;
 
   @override
@@ -149,7 +151,13 @@ class _TarjetaJornada extends StatelessWidget {
       child: ListTile(
         leading: const Icon(Icons.route),
         title: Text('${jornada['ruta'] ?? jornada['name'] ?? ''}'),
-        subtitle: Text('${jornada['fecha'] ?? ''} · ${visitas.length} clientes · $pendientes por visitar'),
+        subtitle: Text('${jornada['fecha'] ?? ''} · ${visitas.length} clientes · $pendientes por visitar'
+            '${jornada['state'] == 'abierta' ? '' : ' · cerrada'}'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: jornada['id'] is! int
+            ? null
+            : () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => PantallaRuta(motor: motor, jornadaId: jornada['id'] as int))),
       ),
     );
   }
