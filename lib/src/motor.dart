@@ -1,0 +1,372 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+
+import 'almacen.dart';
+import 'api.dart';
+import 'base_local.dart';
+import 'pin.dart';
+import 'version.dart';
+
+/// Lo que se guarda en la base local sobre el estado del celular (clave `estado`).
+const _claveEstado = 'estado';
+
+/// Partes de la bajada que se guardan tal cual. `null` en la respuesta significa "sin cambios".
+const partesBajada = ['jornadas', 'catalogo', 'listas', 'iva', 'visita_lista', 'facturas', 'motivos', 'marcas'];
+
+/// Tipos que venden o cobran: necesitan permiso vigente para trabajar sin señal.
+const tiposDeVenta = {'pedido', 'anticipo', 'cobro'};
+
+const maxIntentosPin = 5;
+
+/// Cuánto se tolera que el reloj del celular vaya atrás de la hora más alta que ya vio.
+const toleranciaReloj = Duration(minutes: 10);
+
+DateTime? leerHoraOdoo(Object? valor) {
+  if (valor is! String || valor.isEmpty) return null;
+  return DateTime.tryParse('${valor.replaceFirst(' ', 'T')}Z');
+}
+
+/// El corazón de la app: emparejamiento, PIN, permiso para trabajar sin señal, comandos del supervisor, cola y
+/// sincronización. Las pantallas solo leen su estado y llaman a sus métodos.
+class Motor extends ChangeNotifier {
+  Motor({
+    required this.almacen,
+    required this.abrirBase,
+    this.borrarBase,
+    this.crearApi,
+    DateTime Function()? reloj,
+    this.permitirHttp = false,
+  }) : reloj = reloj ?? DateTime.now;
+
+  final Almacen almacen;
+
+  /// Abre (o crea) la base local cifrada con la llave dada.
+  final Future<BaseLocal> Function(String llave) abrirBase;
+
+  /// Borra el archivo de la base local (comando "borrar").
+  final Future<void> Function()? borrarBase;
+
+  /// Para pruebas: cómo crear el cliente de la API.
+  final Api Function(String url, String db, String? token)? crearApi;
+
+  final DateTime Function() reloj;
+
+  /// Solo en modo desarrollo se permite `http://`.
+  final bool permitirHttp;
+
+  BaseLocal? base;
+  Cola? cola;
+  Api? api;
+
+  // Estado visible
+  bool listo = false;
+  bool noAutorizado = false;
+  bool desbloqueado = false;
+  bool sincronizando = false;
+  String? ultimoError;
+  int pendientes = 0;
+  Map<String, Object?> _estado = {};
+
+  bool get emparejado => api?.token != null;
+
+  Map<String, Object?> get sesion => (_estado['sesion'] as Map?)?.cast<String, Object?>() ?? const {};
+  String get nombreVendedor => ((sesion['usuario'] as Map?)?['nombre'] as String?) ?? '';
+  String get nombreEmpresa => ((sesion['empresa'] as Map?)?['nombre'] as String?) ?? '';
+  DatosPin? get pin => DatosPin.desdeJson(_estado['pin']);
+  bool get bloqueado => _estado['bloqueado'] == true;
+  bool get bloqueoPin => _estado['bloqueo_pin'] == true;
+  int get intentosPin => (_estado['intentos_pin'] as int?) ?? 0;
+  DateTime? get trabajarHasta => leerHoraOdoo(_estado['trabajar_hasta']);
+  DateTime? get ultimaSync => leerHoraOdoo(_estado['ultima_sync']);
+  String get nivelLicencia => ((_estado['licencia'] as Map?)?['nivel'] as String?) ?? 'ok';
+  String get mensajeLicencia => ((_estado['licencia'] as Map?)?['mensaje'] as String?) ?? '';
+  String get versionMinima => (_estado['version_minima'] as String?) ?? '1.0.0';
+  bool get debeActualizar => compararVersion(appVersion, versionMinima) < 0;
+
+  /// El reloj del celular se atrasó respecto de la hora más alta que ya vio (para estirar el permiso).
+  bool get relojAtrasado {
+    final maxima = leerHoraOdoo(_estado['hora_maxima']);
+    return maxima != null && reloj().toUtc().isBefore(maxima.subtract(toleranciaReloj));
+  }
+
+  /// Por qué no se puede vender ahora, o `null` si sí se puede.
+  String? get motivoNoVender {
+    if (bloqueado) return 'El supervisor bloqueó este celular.';
+    if (noAutorizado) return 'Este celular ya no está autorizado. Pida al supervisor un código nuevo.';
+    if (debeActualizar) return 'Actualice la app: Odoo pide la versión $versionMinima o mayor.';
+    if (nivelLicencia == 'off') return mensajeLicencia.isEmpty ? 'Licencia vencida o no activada.' : mensajeLicencia;
+    if (relojAtrasado) return 'La hora del celular está atrasada. Corríjala y conéctese.';
+    final hasta = trabajarHasta;
+    if (hasta == null || !reloj().toUtc().isBefore(hasta)) {
+      return 'Lleva mucho tiempo sin señal. Conéctese para seguir vendiendo (puede consultar, pero no vender).';
+    }
+    return null;
+  }
+
+  bool get puedeVender => motivoNoVender == null;
+
+  // ---------------------------------------------------------------- inicio y emparejamiento
+
+  Api _nuevaApi(String url, String db, String? token) =>
+      crearApi?.call(url, db, token) ?? Api(url: url, db: db, token: token);
+
+  Future<void> iniciar() async {
+    final token = await almacen.leer(Claves.token);
+    final url = await almacen.leer(Claves.url);
+    if (token != null && url != null) {
+      api = _nuevaApi(url, await almacen.leer(Claves.db) ?? '', token);
+      await _abrir();
+    }
+    listo = true;
+    notifyListeners();
+  }
+
+  Future<void> _abrir() async {
+    base ??= await abrirBase(await llaveBaseLocal(almacen));
+    cola = Cola(base!, reloj: reloj);
+    _estado = ((await base!.leer(_claveEstado)) as Map?)?.cast<String, Object?>() ?? {};
+    pendientes = await cola!.contarPendientes();
+  }
+
+  Future<void> _guardarEstado() async {
+    final ahora = horaOdoo(reloj());
+    final maxima = _estado['hora_maxima'] as String?;
+    if (maxima == null || ahora.compareTo(maxima) > 0) _estado['hora_maxima'] = ahora;
+    await base!.escribir(_claveEstado, _estado);
+  }
+
+  /// Canjea el QR del supervisor por el token de este celular.
+  Future<void> emparejar(String textoQr) async {
+    final qr = DatosQr.leer(textoQr, permitirHttp: permitirHttp);
+    var instalacion = await almacen.leer(Claves.idInstalacion);
+    if (instalacion == null) {
+      instalacion = const Uuid().v4();
+      await almacen.escribir(Claves.idInstalacion, instalacion);
+    }
+    final nueva = _nuevaApi(qr.url, qr.db, null);
+    final r = await nueva.emparejar(qr.codigo, {
+      'modelo': '',
+      'sistema': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      'app_version': appVersion,
+      'id_instalacion': instalacion,
+    });
+    final token = r['token'];
+    if (token is! String || token.isEmpty) throw ApiError('servidor', 'El servidor no entregó el acceso.');
+    await almacen.escribir(Claves.url, qr.url);
+    await almacen.escribir(Claves.db, qr.db);
+    await almacen.escribir(Claves.token, token);
+    nueva.token = token;
+    api = nueva;
+    await _abrir();
+    final usuarioAnterior = (sesion['usuario'] as Map?)?['id'];
+    final usuario = (r['usuario'] as Map?)?['id'];
+    if (usuarioAnterior != null && usuarioAnterior != usuario) {
+      // Otro vendedor: lo bajado del anterior ya no sirve. La cola se conserva; lo que no sea de este vendedor
+      // Odoo lo rechaza y queda a la vista.
+      for (final parte in partesBajada) {
+        await base!.borrarDato(parte);
+      }
+    }
+    _estado
+      ..['sesion'] = {'usuario': r['usuario'], 'empresa': r['empresa'], 'dispositivo_id': r['dispositivo_id']}
+      ..['pin'] = r['pin']
+      ..['bloqueado'] = false
+      ..['bloqueo_pin'] = false
+      ..['intentos_pin'] = 0;
+    noAutorizado = false;
+    desbloqueado = pin == null;
+    await _guardarEstado();
+    notifyListeners();
+    unawaited(sincronizar());
+  }
+
+  // ---------------------------------------------------------------- PIN
+
+  /// Valida el PIN sin señal. Tras [maxIntentosPin] fallas, la app queda bloqueada hasta tener señal.
+  Future<bool> desbloquear(String pinCapturado) async {
+    final datos = pin;
+    if (datos == null) {
+      desbloqueado = true;
+      notifyListeners();
+      return true;
+    }
+    if (bloqueoPin) return false;
+    if (await verificarPin(pinCapturado, datos)) {
+      _estado['intentos_pin'] = 0;
+      desbloqueado = true;
+    } else {
+      final intentos = intentosPin + 1;
+      _estado['intentos_pin'] = intentos;
+      if (intentos >= maxIntentosPin) _estado['bloqueo_pin'] = true;
+    }
+    await _guardarEstado();
+    notifyListeners();
+    return desbloqueado;
+  }
+
+  void bloquearPantalla() {
+    if (pin == null) return;
+    desbloqueado = false;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------- lo que hace el vendedor
+
+  /// Guarda una operación en la cola (siempre primero en el celular) y trata de subirla.
+  Future<String> registrar(String tipo, Map<String, Object?> datos) async {
+    if (tiposDeVenta.contains(tipo) && !puedeVender) {
+      throw ApiError('datos', motivoNoVender!);
+    }
+    final uuid = await cola!.agregar(tipo, datos);
+    pendientes = await cola!.contarPendientes();
+    notifyListeners();
+    unawaited(sincronizar());
+    return uuid;
+  }
+
+  Future<Object?> dato(String clave) async => base?.leer(clave);
+
+  // ---------------------------------------------------------------- sincronización
+
+  /// Latido, subir la cola y bajar lo que cambió. Sin señal no hace nada malo: todo queda para después.
+  ///
+  /// Si ya hay una sincronización en curso, devuelve esa misma (no se encima otra).
+  Future<void> sincronizar({bool completo = false}) {
+    if (api == null || base == null) return Future.value();
+    return _enCurso ??= _sincronizar(completo).whenComplete(() => _enCurso = null);
+  }
+
+  Future<void>? _enCurso;
+
+  Future<void> _sincronizar(bool completo) async {
+    sincronizando = true;
+    ultimoError = null;
+    notifyListeners();
+    try {
+      final comandos = await _latido();
+      var resincronizar = completo;
+      var borrar = false;
+      for (final c in comandos) {
+        switch (c['tipo']) {
+          case 'resincronizar':
+            resincronizar = true;
+          case 'borrar':
+            borrar = true;
+        }
+      }
+      if (!bloqueado) await _subir();
+      if (borrar) {
+        await _borrarTodo();
+        return;
+      }
+      if (!bloqueado) await _bajar(resincronizar);
+      _estado['ultima_sync'] = horaOdoo(reloj());
+    } on SinSenal {
+      ultimoError = 'Sin señal. Lo capturado está guardado en el celular y se enviará después.';
+    } on ApiError catch (e) {
+      switch (e.codigo) {
+        case 'token_invalido':
+          noAutorizado = true;
+        case 'dispositivo_bloqueado':
+          _estado['bloqueado'] = true;
+      }
+      ultimoError = e.mensaje;
+    } finally {
+      sincronizando = false;
+      if (base != null) {
+        pendientes = await cola!.contarPendientes();
+        await _guardarEstado();
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<List<Map>> _latido() async {
+    final hechos = ((_estado['comandos_hechos'] as List?) ?? const []).cast<Object?>();
+    final r = await api!.latido({
+      'app_version': appVersion,
+      'cola_pendiente': await cola!.contarPendientes(),
+      'ultima_sync': _estado['ultima_sync'],
+      'comandos_hechos': hechos,
+    });
+    noAutorizado = false;
+    // Con señal y el servidor de acuerdo, el bloqueo por PIN equivocado se levanta.
+    _estado
+      ..['bloqueo_pin'] = false
+      ..['intentos_pin'] = 0
+      ..['comandos_hechos'] = <int>[]
+      ..['licencia'] = r['licencia']
+      ..['version_minima'] = r['version_minima'] ?? '1.0.0'
+      ..['bloqueado'] = r['estado'] == 'bloqueado';
+    if (r['trabajar_hasta'] is String) _estado['trabajar_hasta'] = r['trabajar_hasta'];
+    if (r.containsKey('pin')) {
+      _estado['pin'] = r['pin'];
+      if (r['pin'] == null || r['pin'] == false) desbloqueado = true;
+    }
+    final servidor = r['servidor'] as String?;
+    if (servidor != null) {
+      // La hora del servidor manda: si el celular iba adelantado, la marca se corrige.
+      _estado['hora_maxima'] = servidor;
+    }
+    final comandos = ((r['comandos'] as List?) ?? const []).whereType<Map>().toList();
+    final nuevosHechos = <int>[];
+    for (final c in comandos) {
+      switch (c['tipo']) {
+        case 'bloquear':
+          _estado['bloqueado'] = true;
+        case 'desbloquear':
+          _estado['bloqueado'] = false;
+      }
+      if (c['id'] is int && c['tipo'] != 'borrar') nuevosHechos.add(c['id'] as int);
+    }
+    _estado['comandos_hechos'] = nuevosHechos;
+    return comandos;
+  }
+
+  Future<void> _subir() async {
+    // En lotes y en orden; si se cae la señal a medias, lo que falta sigue pendiente.
+    for (var vuelta = 0; vuelta < 40; vuelta++) {
+      final lote = await cola!.pendientes(limite: 50);
+      if (lote.isEmpty) return;
+      final resultados = await api!.subir(lote.map((o) => o.paraSubir()).toList());
+      await cola!.aplicarResultados(resultados);
+      if (resultados.length < lote.length) return;
+      // Las que regresaron con error siguen pendientes: no se reintentan en la misma vuelta.
+      final siguen = (await cola!.pendientes(limite: 50)).map((o) => o.uuid).toSet();
+      if (lote.every((o) => siguen.contains(o.uuid))) return;
+    }
+  }
+
+  Future<void> _bajar(bool completo) async {
+    final marcas = completo ? <String, Object?>{} : ((await base!.leer('marcas')) as Map?)?.cast<String, Object?>() ?? {};
+    final r = await api!.bajar(marcas);
+    final guardar = <String, Object?>{};
+    for (final parte in partesBajada) {
+      if (r.containsKey(parte) && r[parte] != null) guardar[parte] = r[parte];
+    }
+    if (r['sesion'] is Map) {
+      final s = (r['sesion'] as Map).cast<String, Object?>();
+      _estado['sesion'] = {'usuario': s['usuario'], 'empresa': s['empresa'], 'dispositivo_id': s['dispositivo_id']};
+      _estado['pin'] = s['pin'];
+    }
+    await base!.escribirVarios(guardar);
+  }
+
+  /// Comando "borrar" del supervisor: ya intentó subir lo pendiente; borra la base, el token y la llave.
+  Future<void> _borrarTodo() async {
+    await base?.close();
+    base = null;
+    cola = null;
+    await borrarBase?.call();
+    final instalacion = await almacen.leer(Claves.idInstalacion);
+    await almacen.borrarTodo();
+    if (instalacion != null) await almacen.escribir(Claves.idInstalacion, instalacion);
+    api = null;
+    _estado = {};
+    desbloqueado = false;
+    pendientes = 0;
+  }
+}

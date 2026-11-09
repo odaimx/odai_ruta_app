@@ -1,0 +1,28 @@
+name: odai_ruta
+description: "Odai Ruta: venta en ruta sin internet para Odoo 20."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  crypto: ^3.0.8
+  flutter:
+    sdk: flutter
+  flutter_secure_storage: ^11.2.0
+  http: ^1.6.0
+  mobile_scanner: ^7.5.0
+  path: ^1.9.1
+  sqflite_common: ^2.5.16
+  sqflite_sqlcipher: ^3.4.1
+  uuid: ^4.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  sqflite_common_ffi: ^2.4.6
+
+flutter:
+  uses-material-design: true
