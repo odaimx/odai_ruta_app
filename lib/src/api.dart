@@ -94,6 +94,7 @@ class Api {
       final headers = <String, String>{
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        if (db.isNotEmpty) 'X-Odoo-Database': db,
         if (_cookie != null && _cookie!.isNotEmpty) 'Cookie': _cookie!,
         if (conToken && token != null) 'Authorization': 'Bearer $token',
       };
