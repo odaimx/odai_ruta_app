@@ -20,6 +20,7 @@ class OdooFalso {
   Map<String, Object?>? ultimoLatido;
   Map<String, Object?>? ultimaBajada;
   String catalogoMarca = 'm1';
+  String versionImagen = '';
   String? cookie;
 
   late final cliente = MockClient((peticion) async {
@@ -83,15 +84,25 @@ class OdooFalso {
         final desde = (cuerpo['desde'] as Map?) ?? {};
         r = json({
           'jornadas': [
-            {'jornada': {'id': 3, 'ruta': 'Ruta Norte', 'fecha': '2026-11-10'}, 'visitas': []}
+            {'jornada': {'id': 3, 'ruta': 'Ruta Norte', 'fecha': '2026-11-10'}, 'visitas': [],
+              'config': {'imagenes': versionImagen.isNotEmpty}}
           ],
-          'catalogo': desde['catalogo'] == catalogoMarca ? null : [{'id': 1, 'name': 'Refresco'}],
+          'catalogo': desde['catalogo'] == catalogoMarca
+              ? null
+              : [{'id': 1, 'name': 'Refresco', 'imagen': versionImagen}, {'id': 2, 'name': 'Agua', 'imagen': ''}],
           'listas': {},
           'iva': {},
           'visita_lista': {},
           'facturas': {},
           'motivos': [],
           'marcas': {'catalogo': catalogoMarca, 'precios': 'p1'},
+        });
+      case 'imagenes':
+        r = json({
+          'imagenes': {
+            for (final id in (cuerpo['ids'] as List).cast<int>())
+              if (id == 1) '$id': {'b64': base64Encode([1, 2, 3]), 'tipo': 'image/png', 'version': versionImagen}
+          }
         });
       default:
         r = json({}, 404);
@@ -154,7 +165,7 @@ void main() {
     // Bajada incremental: manda la marca y conserva el catálogo que ya tenía
     await motor.sincronizar();
     expect((odoo.ultimaBajada!['desde'] as Map)['catalogo'], 'm1');
-    expect((await motor.dato('catalogo')) as List, hasLength(1));
+    expect((await motor.dato('catalogo')) as List, hasLength(2));
   });
 
   test('cinco PIN equivocados bloquean hasta tener señal', () async {
@@ -253,5 +264,23 @@ void main() {
     await motor.sincronizar();
     expect(motor.noAutorizado, isTrue);
     expect(motor.puedeVender, isFalse);
+  });
+
+  test('fotos de productos: bajan una vez y se vuelven a pedir solo si cambian', () async {
+    odoo.versionImagen = 'v1';
+    final motor = nuevoMotor();
+    await motor.iniciar();
+    await motor.emparejar(qr);
+    await motor.sincronizar();
+    expect(await motor.imagen(1), [1, 2, 3]);
+    expect(await motor.imagen(2), isNull);
+    expect(odoo.llamadas.where((l) => l == 'imagenes'), hasLength(1));
+    await motor.sincronizar();
+    expect(odoo.llamadas.where((l) => l == 'imagenes'), hasLength(1), reason: 'misma versión: no se pide de nuevo');
+    odoo
+      ..versionImagen = 'v2'
+      ..catalogoMarca = 'm2';
+    await motor.sincronizar();
+    expect(odoo.llamadas.where((l) => l == 'imagenes'), hasLength(2));
   });
 }

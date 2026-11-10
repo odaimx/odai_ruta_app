@@ -191,6 +191,11 @@ class _PantallaPedidoState extends State<PantallaPedido> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
         child: Row(children: [
+          if (p['imagen'] is String && (p['imagen'] as String).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Miniatura(motor: widget.motor, productoId: p['id'] as int),
+            ),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${p['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -272,7 +273,10 @@ class Motor extends ChangeNotifier {
         await _borrarTodo();
         return;
       }
-      if (!bloqueado) await _bajar(resincronizar);
+      if (!bloqueado) {
+        await _bajar(resincronizar);
+        await _bajarImagenes();
+      }
       _estado['ultima_sync'] = horaOdoo(reloj());
     } on SinSenal {
       _ultimaConexion = null;
@@ -365,6 +369,71 @@ class Motor extends ChangeNotifier {
       _estado['pin'] = s['pin'];
     }
     await base!.escribirVarios(guardar);
+  }
+
+  // ---------------------------------------------------------------- imágenes
+
+  final _imagenes = <int, Uint8List?>{};
+
+  /// La miniatura si ya está en memoria (para pintar sin parpadeo); `null` si hay que leerla con [imagen].
+  (Uint8List?,)? imagenEnMemoria(int productoId) =>
+      _imagenes.containsKey(productoId) ? (_imagenes[productoId],) : null;
+
+  /// Miniatura guardada del producto, o null si no tiene (o aún no baja). Funciona sin señal.
+  Future<Uint8List?> imagen(int productoId) async {
+    if (_imagenes.containsKey(productoId)) return _imagenes[productoId];
+    final b64 = await base?.leer('img:$productoId');
+    final bytes = b64 is String && b64.isNotEmpty ? base64Decode(b64) : null;
+    _imagenes[productoId] = bytes;
+    return bytes;
+  }
+
+  /// Baja una sola vez las miniaturas nuevas o cambiadas del catálogo. Si falla, sigue sin fotos y reintenta en la
+  /// siguiente sincronización.
+  Future<void> _bajarImagenes() async {
+    final jornadas = ((await base!.leer('jornadas')) as List?)?.whereType<Map>() ?? const <Map>[];
+    final activas = jornadas.any((j) => (j['config'] as Map?)?['imagenes'] == true);
+    if (!activas) return;
+    final catalogo = ((await base!.leer('catalogo')) as List?)?.whereType<Map>() ?? const <Map>[];
+    final versiones = ((await base!.leer('img_versiones')) as Map?)?.cast<String, Object?>() ?? <String, Object?>{};
+    final faltan = <int>[];
+    for (final p in catalogo) {
+      final id = p['id'];
+      final version = '${p['imagen'] ?? ''}';
+      if (id is! int) continue;
+      if (version.isEmpty) {
+        if (versiones.remove('$id') != null) {
+          await base!.borrarDato('img:$id');
+          _imagenes.remove(id);
+        }
+      } else if (versiones['$id'] != version) {
+        faltan.add(id);
+      }
+    }
+    try {
+      for (var i = 0; i < faltan.length && i < 400; i += 40) {
+        final lote = faltan.sublist(i, i + 40 > faltan.length ? faltan.length : i + 40);
+        final r = await api!.imagenes(lote);
+        final guardar = <String, Object?>{};
+        for (final id in lote) {
+          final img = r['$id'];
+          if (img is Map && img['b64'] is String) {
+            guardar['img:$id'] = img['b64'];
+            versiones['$id'] = img['version'] ?? '';
+          } else {
+            versiones['$id'] = catalogo.firstWhere((p) => p['id'] == id)['imagen'];
+          }
+          _imagenes.remove(id);
+        }
+        guardar['img_versiones'] = versiones;
+        await base!.escribirVarios(guardar);
+        notifyListeners();
+      }
+    } on SinSenal {
+      return;
+    } on ApiError {
+      return;
+    }
   }
 
   /// Comando "borrar" del supervisor: ya intentó subir lo pendiente; borra la base, el token y la llave.

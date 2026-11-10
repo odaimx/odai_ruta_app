@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../motor.dart';
 
 /// Muestra el resultado de guardar algo en la cola.
 void avisar(BuildContext context, String texto, {bool error = false}) {
@@ -55,3 +56,40 @@ const etiquetasEstado = {
   'sin_venta': 'Sin venta',
   'no_visitado': 'No visitado',
 };
+
+
+/// Foto del producto guardada en el celular (se ve sin señal). Sin foto todavía, un cuadro gris.
+class Miniatura extends StatelessWidget {
+  const Miniatura({super.key, required this.motor, required this.productoId, this.lado = 56});
+
+  final Motor motor;
+  final int productoId;
+  final double lado;
+
+  @override
+  Widget build(BuildContext context) {
+    final vacio = Container(
+      width: lado,
+      height: lado,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Icon(Icons.inventory_2_outlined, color: Theme.of(context).colorScheme.outline),
+    );
+    return ListenableBuilder(
+      listenable: motor,
+      builder: (context, _) => FutureBuilder(
+        future: motor.imagen(productoId),
+        initialData: motor.imagenEnMemoria(productoId)?.$1,
+        builder: (context, foto) => foto.data == null
+            ? vacio
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(foto.data!, width: lado, height: lado, fit: BoxFit.contain, gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => vacio),
+              ),
+      ),
+    );
+  }
+}

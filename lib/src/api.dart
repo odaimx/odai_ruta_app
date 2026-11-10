@@ -144,6 +144,12 @@ class Api {
 
   Future<Map<String, Object?>> bajar(Map<String, Object?> desde) => llamar('bajar', {'desde': desde});
 
+  /// Miniaturas de productos: `{id: {b64, tipo, version}}`.
+  Future<Map> imagenes(List<int> ids) async {
+    final r = await llamar('imagenes', {'ids': ids});
+    return (r['imagenes'] as Map?) ?? const {};
+  }
+
   Future<List<Object?>> subir(List<Map<String, Object?>> operaciones) async {
     final r = await llamar('subir', {'operaciones': operaciones});
     return (r['resultados'] as List?) ?? const [];
