@@ -1,5 +1,11 @@
 /// Versión de la app que se reporta al servidor. Debe coincidir con `version` de pubspec.yaml.
-const String appVersion = '1.0.0';
+const String appVersion = '1.0.1';
+
+/// Número de compilación que pone el CI (--dart-define=COMPILACION=...).
+const String compilacion = String.fromEnvironment('COMPILACION', defaultValue: 'local');
+
+/// Versión con compilación, para mostrarla en pantalla.
+const String appVersionCompleta = '$appVersion ($compilacion)';
 
 /// Compara versiones "1.2.3". Negativo si [a] < [b], cero si son iguales, positivo si [a] > [b].
 int compararVersion(String a, String b) {

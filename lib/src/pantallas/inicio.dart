@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../base_local.dart';
 import '../motor.dart';
+import '../version.dart';
 import 'ruta.dart';
 
 String _fechaLocal(DateTime? utc) {
@@ -118,6 +119,8 @@ class _PantallaInicioState extends State<PantallaInicio> {
                     'sin aparecer, pida al supervisor que revise su ruta.'),
               ),
             for (final datos in _jornadas) _TarjetaJornada(motor: motor, datos: datos),
+            const SizedBox(height: 24),
+            Center(child: Text('Versión $appVersionCompleta', style: tema.textTheme.bodySmall)),
           ],
         ),
       ),
