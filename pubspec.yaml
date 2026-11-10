@@ -1,7 +1,7 @@
 name: odai_ruta
 description: "Odai Ruta: venta en ruta sin internet para Odoo 20."
 publish_to: 'none'
-version: 1.0.4+1
+version: 1.0.5+1
 
 environment:
   sdk: ^3.13.7

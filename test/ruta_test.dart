@@ -81,4 +81,29 @@ void main() {
     expect(tablero.cobrado, 350.0);
     expect([tablero.visitas, tablero.hechas, tablero.conPedido, tablero.sinVenta, tablero.pendientes], [3, 2, 1, 1, 1]);
   });
+
+  test('cliente nuevo y cambios de contacto sin señal', () async {
+    final uuidAlta = await motor.cola!.agregar('cliente_nuevo', {'jornada_id': 3, 'nombre': 'Doña Mary', 'telefono': '5512345678'});
+    await motor.cola!.agregar('cliente', {'visita_id': 10, 'contacto': {'telefono': '5599990000', 'calle': 'Juárez 4'}});
+    var ruta = await Ruta.cargar(motor);
+    final provisional = Ruta.idProvisional(uuidAlta);
+    expect(provisional, isNegative);
+    final visitas = ruta.visitas(3);
+    final nueva = visitas.firstWhere((v) => v['id'] == provisional);
+    expect(nueva['cliente'], 'Doña Mary');
+    expect(nueva['alta_ruta'], isTrue);
+    expect(nueva['credito'], isA<Map>().having((c) => c['a_credito'], 'a_credito', isFalse),
+        reason: 'El cliente nuevo nace de contado');
+    final lupita = ruta.visita(3, 10)!;
+    expect((lupita['contacto'] as Map)['telefono'], '5599990000', reason: 'El cambio se ve antes de subirlo');
+
+    // Lo que se captura para el cliente nuevo se liga a su alta, no a un id que Odoo no conoce.
+    await motor.registrar('cliente', {'visita_id': provisional, 'contacto': {'correo': 'mary@ejemplo.mx'}});
+    final ops = await motor.cola!.pendientes(limite: 100);
+    final cambio = ops.lastWhere((o) => o.tipo == 'cliente');
+    expect(cambio.datos['visita_uuid'], uuidAlta);
+    expect(cambio.datos.containsKey('visita_id'), isFalse);
+    ruta = await Ruta.cargar(motor);
+    expect(ruta.enCola(ruta.visita(3, provisional)!), isTrue);
+  });
 }

@@ -4,7 +4,7 @@ import '../actualizar.dart';
 import '../api.dart';
 import '../base_local.dart';
 import '../motor.dart';
-import '../version.dart';
+import 'comun.dart';
 import 'pin.dart';
 import 'ruta.dart';
 
@@ -79,6 +79,7 @@ class _PantallaInicioState extends State<PantallaInicio> {
           ),
         ],
       ),
+      bottomNavigationBar: const PieOdai(),
       body: RefreshIndicator(
         onRefresh: () => motor.sincronizar(),
         child: ListView(
@@ -134,7 +135,6 @@ class _PantallaInicioState extends State<PantallaInicio> {
               ),
             for (final datos in _jornadas) _TarjetaJornada(motor: motor, datos: datos),
             const SizedBox(height: 24),
-            Center(child: Text('Versión $appVersionCompleta', style: tema.textTheme.bodySmall)),
           ],
         ),
       ),

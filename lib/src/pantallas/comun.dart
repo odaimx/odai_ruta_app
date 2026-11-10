@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../motor.dart';
+import '../version.dart';
 
 /// Muestra el resultado de guardar algo en la cola.
 void avisar(BuildContext context, String texto, {bool error = false}) {
@@ -68,28 +69,48 @@ class Miniatura extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final vacio = Container(
-      width: lado,
-      height: lado,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Icon(Icons.inventory_2_outlined, color: Theme.of(context).colorScheme.outline),
-    );
+    final vacio = Icon(Icons.inventory_2_outlined, color: Colors.grey.shade400);
+    Widget marco(Widget hijo) => Container(
+          width: lado,
+          height: lado,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: ClipRRect(borderRadius: BorderRadius.circular(7), child: Center(child: hijo)),
+        );
     return ListenableBuilder(
       listenable: motor,
       builder: (context, _) => FutureBuilder(
         future: motor.imagen(productoId),
         initialData: motor.imagenEnMemoria(productoId)?.$1,
-        builder: (context, foto) => foto.data == null
+        builder: (context, foto) => marco(foto.data == null
             ? vacio
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.memory(foto.data!, width: lado, height: lado, fit: BoxFit.contain, gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => vacio),
-              ),
+            : Image.memory(foto.data!, fit: BoxFit.contain, gaplessPlayback: true, errorBuilder: (_, _, _) => vacio)),
       ),
+    );
+  }
+}
+
+/// Pie de pantalla con los datos de propiedad de ODAI y la versión instalada.
+class PieOdai extends StatelessWidget {
+  const PieOdai({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final estilo = Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600);
+    return SafeArea(
+      top: false,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text('Derechos reservados © ODAI | www.odai.lat | Versión $appVersion',
+              textAlign: TextAlign.center, style: estilo),
+        ),
+      ]),
     );
   }
 }

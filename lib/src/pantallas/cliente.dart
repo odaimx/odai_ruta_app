@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../motor.dart';
 import '../ruta.dart';
+import 'cliente_datos.dart';
 import 'cobro.dart';
 import 'comun.dart';
 import 'pedido.dart';
@@ -55,7 +56,13 @@ class _PantallaClienteState extends State<PantallaCliente> {
     final tema = Theme.of(context);
     final pedidos = ((v['pedidos'] as List?) ?? const []).whereType<Map>().toList();
     return Scaffold(
-      appBar: AppBar(title: Text('${v['cliente']}')),
+      appBar: AppBar(title: Text('${v['cliente']}'), actions: [
+        IconButton(
+          tooltip: 'Editar datos',
+          icon: const Icon(Icons.edit),
+          onPressed: () => _ir(PantallaDatosCliente(motor: widget.motor, jornadaId: widget.jornadaId, visita: v)),
+        ),
+      ]),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -63,7 +70,11 @@ class _PantallaClienteState extends State<PantallaCliente> {
           if ((v['direccion'] as String?)?.isNotEmpty == true) Text('${v['direccion']}'),
           if ((v['telefono'] as String?)?.isNotEmpty == true) Text('Tel. ${v['telefono']}'),
           const SizedBox(height: 8),
-          Chip(label: Text(etiquetasEstado[estado] ?? estado)),
+          Wrap(spacing: 8, children: [
+            Chip(label: Text(etiquetasEstado[estado] ?? estado)),
+            if (v['alta_ruta'] == true) const Chip(label: Text('Nuevo · de contado')),
+            if ((v['id'] as int) < 0) const Chip(label: Text('Por enviar')),
+          ]),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),

@@ -187,7 +187,15 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     final enCarrito = _lineas.where((l) => l.productId == p['id']).fold(0.0, (s, l) => s + l.cantidad);
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      color: enCarrito > 0 ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35) : null,
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+            color: enCarrito > 0 ? Theme.of(context).colorScheme.primary : Colors.grey.shade300,
+            width: enCarrito > 0 ? 1.5 : 1),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
         child: Row(children: [
@@ -334,6 +342,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     final total = ruta.total(widget.visitaId, _lineas);
     final piezas = _lineas.length;
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text('${v['cliente']}'),
         actions: [IconButton(tooltip: 'Escanear', onPressed: _escanear, icon: const Icon(Icons.qr_code_scanner))],

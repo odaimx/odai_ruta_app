@@ -123,7 +123,65 @@ class Ruta {
 
   Moneda moneda(int jornadaId) => Moneda.desde(config(jornadaId)['moneda']);
 
-  Iterable<Operacion> _pendientesDe(int visitaId) => _pendientes.where((o) => o.datos['visita_id'] == visitaId);
+  /// Id provisional (negativo) de un cliente dado de alta sin señal: se usa en pantalla hasta que Odoo crea la
+  /// visita; lo que se capture para él sube con `visita_uuid`.
+  static int idProvisional(String uuid) =>
+      -(int.parse(uuid.replaceAll('-', '').substring(0, 7), radix: 16) + 1);
+
+  Iterable<Operacion> get _altas => _pendientes.where((o) => o.tipo == 'cliente_nuevo');
+
+  Iterable<Operacion> _pendientesDe(int visitaId) {
+    String? uuidAlta;
+    if (visitaId < 0) {
+      for (final a in _altas) {
+        if (idProvisional(a.uuid) == visitaId) uuidAlta = a.uuid;
+      }
+    }
+    return _pendientes.where((o) =>
+        o.tipo != 'cliente_nuevo' &&
+        (o.datos['visita_id'] == visitaId || (uuidAlta != null && o.datos['visita_uuid'] == uuidAlta)));
+  }
+
+  /// La visita con los datos de contacto que esperan en la cola ya aplicados.
+  Map _conContacto(Map visita) {
+    final cambios = _pendientesDe(visita['id'] as int).where((o) => o.tipo == 'cliente').toList();
+    if (cambios.isEmpty) return visita;
+    final v = Map<String, Object?>.from(visita.cast<String, Object?>());
+    final contacto = Map<String, Object?>.from(((v['contacto'] as Map?) ?? const {}).cast<String, Object?>());
+    for (final c in cambios) {
+      contacto.addAll(((c.datos['contacto'] as Map?) ?? const {}).cast<String, Object?>());
+    }
+    v['contacto'] = contacto;
+    v['comercial'] = contacto['comercial'] ?? v['comercial'];
+    v['telefono'] = contacto['telefono'] ?? v['telefono'];
+    v['direccion'] = direccionDe(contacto);
+    return v;
+  }
+
+  static String direccionDe(Map contacto) => [contacto['calle'], contacto['colonia'], contacto['ciudad']]
+      .where((p) => p is String && p.trim().isNotEmpty)
+      .join(', ');
+
+  /// Clientes dados de alta en el celular que aún no llegan a Odoo: se venden de contado.
+  List<Map> _altasDe(int jornadaId) => [
+        for (final a in _altas.where((a) => a.datos['jornada_id'] == jornadaId))
+          {
+            'id': idProvisional(a.uuid),
+            'uuid_alta': a.uuid,
+            'cliente': a.datos['nombre'] ?? 'Cliente nuevo',
+            'comercial': a.datos['comercial'] ?? '',
+            'telefono': a.datos['telefono'] ?? '',
+            'direccion': direccionDe(a.datos),
+            'contacto': {for (final k in ['comercial', 'telefono', 'correo', 'calle', 'colonia', 'ciudad', 'cp']) k: a.datos[k] ?? ''},
+            'estado': 'pendiente',
+            'secuencia': 100000,
+            'alta_ruta': true,
+            'fuera_de_ruta': true,
+            'credito': {'a_credito': false, 'estado': 'ok'},
+            'pedidos': const [],
+            'codigos': const [],
+          }
+      ];
 
   /// Estado de la visita contando lo que espera en la cola.
   String estado(Map visita) {
@@ -138,7 +196,10 @@ class Ruta {
 
   /// Visitas de la jornada: pendientes primero (en orden de visita), luego las visitadas.
   List<Map> visitas(int jornadaId) {
-    final todas = ((jornada(jornadaId)?['visitas'] as List?) ?? const []).whereType<Map>().toList();
+    final todas = [
+      ...((jornada(jornadaId)?['visitas'] as List?) ?? const []).whereType<Map>().map(_conContacto),
+      ..._altasDe(jornadaId).map(_conContacto),
+    ];
     int orden(Map v) => estado(v) == 'pendiente' ? 0 : 1;
     todas.sort((a, b) {
       final c = orden(a) - orden(b);

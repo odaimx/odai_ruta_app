@@ -10,6 +10,7 @@ import 'almacen.dart';
 import 'api.dart';
 import 'base_local.dart';
 import 'pin.dart';
+import 'ruta.dart';
 import 'version.dart';
 
 /// Lo que se guarda en la base local sobre el estado del celular (clave `estado`).
@@ -273,6 +274,14 @@ class Motor extends ChangeNotifier {
   Future<String> registrar(String tipo, Map<String, Object?> datos) async {
     if (tiposDeVenta.contains(tipo) && !puedeVender) {
       throw ApiError('datos', motivoNoVender!);
+    }
+    final visitaId = datos['visita_id'];
+    if (visitaId is int && visitaId < 0) {
+      // Cliente dado de alta sin señal: se liga a su alta, que Odoo procesa primero.
+      final altas = (await cola!.pendientes(limite: 100000)).where((o) => o.tipo == 'cliente_nuevo');
+      final alta = altas.where((o) => Ruta.idProvisional(o.uuid) == visitaId).firstOrNull;
+      if (alta == null) throw ApiError('datos', 'El cliente nuevo ya no está en el celular. Sincronice.');
+      datos = {...datos, 'visita_uuid': alta.uuid}..remove('visita_id');
     }
     final uuid = await cola!.agregar(tipo, datos);
     pendientes = await cola!.contarPendientes();

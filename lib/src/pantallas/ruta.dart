@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../motor.dart';
 import '../ruta.dart';
 import 'cliente.dart';
+import 'cliente_datos.dart';
 import 'comun.dart';
 
 /// Los clientes de la jornada: primero los que faltan por visitar.
@@ -31,6 +32,16 @@ class _PantallaRutaState extends State<PantallaRuta> {
   void dispose() {
     widget.motor.removeListener(_cargar);
     super.dispose();
+  }
+
+  Future<void> _clienteNuevo() async {
+    final id = await Navigator.push<int>(
+        context, MaterialPageRoute(builder: (_) => PantallaDatosCliente(motor: widget.motor, jornadaId: widget.jornadaId)));
+    await _cargar();
+    if (id == null || !mounted) return;
+    await Navigator.push(context,
+        MaterialPageRoute(builder: (_) => PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)));
+    _cargar();
   }
 
   Future<void> _cargar() async {
@@ -95,10 +106,24 @@ class _PantallaRutaState extends State<PantallaRuta> {
           _PanelTablero(tablero: ruta.tablero(widget.jornadaId), moneda: moneda),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Buscar cliente', border: OutlineInputBorder()),
-              onChanged: (v) => setState(() => _filtro = v),
-            ),
+            child: Row(children: [
+              Expanded(
+                child: TextField(
+                  decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search), hintText: 'Buscar cliente', border: OutlineInputBorder()),
+                  onChanged: (v) => setState(() => _filtro = v),
+                ),
+              ),
+              if (jornada['state'] == 'abierta') ...[
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _clienteNuevo,
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 56)),
+                  icon: const Icon(Icons.person_add),
+                  label: const Text('Nuevo'),
+                ),
+              ],
+            ]),
           ),
           Expanded(
             child: ListView.builder(
