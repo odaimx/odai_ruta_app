@@ -39,6 +39,20 @@ class MainActivity : FlutterActivity() {
                         resultado.success("ok")
                     }
                 }
+                "abrir" -> {
+                    // Abre una página (por ejemplo www.odai.lat) en el navegador del celular.
+                    val url = llamada.argument<String>("url")
+                    if (url == null || !url.startsWith("https://")) {
+                        resultado.error("datos", "Dirección no válida", null)
+                    } else {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            resultado.success("ok")
+                        } catch (e: android.content.ActivityNotFoundException) {
+                            resultado.error("sin_navegador", "No hay navegador en el celular", null)
+                        }
+                    }
+                }
                 else -> resultado.notImplemented()
             }
         }

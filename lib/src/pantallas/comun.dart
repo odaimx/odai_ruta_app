@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../actualizar.dart';
 import '../api.dart';
 import '../motor.dart';
 import '../version.dart';
@@ -107,8 +108,19 @@ class PieOdai extends StatelessWidget {
         Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text('Derechos reservados © ODAI | www.odai.lat | Versión $appVersion',
-              textAlign: TextAlign.center, style: estilo),
+          child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            Text('Derechos reservados © ODAI  |  ', style: estilo),
+            InkWell(
+              onTap: () => abrirEnNavegador('https://www.odai.lat'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text('www.odai.lat',
+                    style: estilo?.copyWith(
+                        color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline)),
+              ),
+            ),
+            Text('  |  Versión $appVersion', style: estilo),
+          ]),
         ),
       ]),
     );

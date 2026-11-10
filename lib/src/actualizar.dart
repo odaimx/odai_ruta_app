@@ -25,3 +25,15 @@ Future<String> actualizarApp(Motor motor, {void Function(double? avance)? avance
   }
   return await _canal.invokeMethod<String>('instalar', {'ruta': archivo.path}) ?? 'ok';
 }
+
+/// Abre [url] en el navegador del celular. Devuelve false si no se pudo.
+Future<bool> abrirEnNavegador(String url) async {
+  try {
+    await _canal.invokeMethod<String>('abrir', {'url': url});
+    return true;
+  } on PlatformException {
+    return false;
+  } on MissingPluginException {
+    return false;
+  }
+}
