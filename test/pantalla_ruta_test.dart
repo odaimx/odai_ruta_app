@@ -39,7 +39,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('accion_Nuevo cliente')), findsOneWidget);
-    expect(find.byKey(const ValueKey('accion_Cerrar jornada')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('acciones')));
+    await tester.pumpAndSettle();
+    expect(find.text('Cerrar jornada'), findsOneWidget, reason: 'Las demás acciones van en el menú');
+    expect(find.text('Sincronizar'), findsOneWidget);
+    await tester.tapAt(const Offset(5, 1990));
+    await tester.pumpAndSettle();
     expect(find.text('Lupita'), findsOneWidget);
     expect(find.text('Don Pepe'), findsNothing, reason: 'Los visitados no estorban al buscar');
 

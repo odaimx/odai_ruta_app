@@ -137,8 +137,8 @@ class Accion {
   final bool principal;
 }
 
-/// Barra de acciones debajo del título, igual en todas las pantallas (como los botones de Odoo): todas en una
-/// línea, del mismo tamaño y forma, siempre con su texto.
+/// Barra de acciones debajo del título, igual en todas las pantallas: a la izquierda el menú "⋮ Acciones" con las
+/// demás opciones y al lado la acción más importante de la pantalla. Así nunca se pasa del ancho del celular.
 class BarraAcciones extends StatelessWidget {
   const BarraAcciones({super.key, required this.acciones});
 
@@ -148,33 +148,47 @@ class BarraAcciones extends StatelessWidget {
   Widget build(BuildContext context) {
     if (acciones.isEmpty) return const SizedBox.shrink();
     const alto = Size(0, 44);
+    final principal = acciones.where((a) => a.principal).firstOrNull;
+    final resto = acciones.where((a) => a != principal).toList();
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade400)),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(children: [
-          for (final (i, a) in acciones.indexed) ...[
-            if (i > 0) const SizedBox(width: 8),
-            a.principal
-                ? FilledButton.icon(
-                    key: ValueKey('accion_${a.texto}'),
-                    onPressed: a.onPressed,
-                    style: FilledButton.styleFrom(minimumSize: alto),
-                    icon: Icon(a.icono, size: 20),
-                    label: Text(a.texto))
-                : OutlinedButton.icon(
-                    key: ValueKey('accion_${a.texto}'),
-                    onPressed: a.onPressed,
-                    style: OutlinedButton.styleFrom(minimumSize: alto),
-                    icon: Icon(a.icono, size: 20),
-                    label: Text(a.texto)),
-          ],
-        ]),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(children: [
+        if (resto.isNotEmpty)
+          MenuAnchor(
+            menuChildren: [
+              for (final a in resto)
+                MenuItemButton(
+                  key: ValueKey('accion_${a.texto}'),
+                  leadingIcon: Icon(a.icono),
+                  onPressed: a.onPressed,
+                  child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(a.texto)),
+                ),
+            ],
+            builder: (context, menu, _) => OutlinedButton.icon(
+              key: const ValueKey('acciones'),
+              onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+              style: OutlinedButton.styleFrom(minimumSize: alto),
+              icon: const Icon(Icons.more_vert, size: 20),
+              label: const Text('Acciones'),
+            ),
+          ),
+        if (resto.isNotEmpty && principal != null) const SizedBox(width: 8),
+        if (principal != null)
+          Flexible(
+            child: FilledButton.icon(
+              key: ValueKey('accion_${principal.texto}'),
+              onPressed: principal.onPressed,
+              style: FilledButton.styleFrom(minimumSize: alto),
+              icon: Icon(principal.icono, size: 20),
+              label: Text(principal.texto, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+      ]),
     );
   }
 }
