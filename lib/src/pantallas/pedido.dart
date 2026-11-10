@@ -22,6 +22,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
   Ruta? _ruta;
   Map? _visita;
   final _lineas = <Linea>[];
+  final _uomElegido = <int, int>{};
   String _busqueda = '';
   bool _contado = false;
   bool _factura = false;
@@ -70,35 +71,6 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     }
     _agregar(hallado.$1, uomId: hallado.$2);
     avisar(context, 'Agregado: ${hallado.$1['name']}');
-  }
-
-  Future<void> _elegir(Map producto) async {
-    final uoms = ((producto['uoms'] as List?) ?? const []).whereType<Map>().toList();
-    if (uoms.isEmpty) {
-      _agregar(producto);
-      return;
-    }
-    final ruta = _ruta!;
-    final moneda = ruta.moneda(widget.jornadaId);
-    final elegido = await showModalBottomSheet<int>(
-      context: context,
-      builder: (c) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(
-            title: Text('${producto['uom']}'),
-            trailing: Text(moneda(ruta.precio(widget.visitaId, producto))),
-            onTap: () => Navigator.pop(c, 0),
-          ),
-          for (final u in uoms)
-            ListTile(
-              title: Text('${u['name']}'),
-              trailing: Text(moneda(ruta.precio(widget.visitaId, producto, uomId: u['id'] as int))),
-              onTap: () => Navigator.pop(c, u['id'] as int),
-            ),
-        ]),
-      ),
-    );
-    if (elegido != null) _agregar(producto, uomId: elegido == 0 ? null : elegido);
   }
 
   Future<void> _enviar() async {
@@ -155,6 +127,196 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     }
   }
 
+  Linea? _linea(Map producto, int? uomId) {
+    for (final l in _lineas) {
+      if (l.productId == producto['id'] && l.uomId == uomId) return l;
+    }
+    return null;
+  }
+
+  double _cantidad(Map producto, int? uomId) => _linea(producto, uomId)?.cantidad ?? 0;
+
+  void _poner(Map producto, int? uomId, double cantidad) {
+    setState(() {
+      final l = _linea(producto, uomId);
+      if (cantidad <= 0) {
+        if (l != null) _lineas.remove(l);
+      } else if (l != null) {
+        l.cantidad = cantidad;
+      } else {
+        _lineas.add(Linea(producto: producto, cantidad: cantidad, uomId: uomId));
+      }
+    });
+  }
+
+  /// Teclear la cantidad (también decimales, para productos a granel).
+  Future<void> _teclear(Map producto, int? uomId) async {
+    final actual = _cantidad(producto, uomId);
+    final control = TextEditingController(text: actual > 0 ? _textoCantidad(actual) : '');
+    final r = await showDialog<double>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text('${producto['name']}'),
+        content: TextField(
+          controller: control,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Cantidad'),
+          onSubmitted: (t) => Navigator.pop(c, double.tryParse(t.replaceAll(',', '.')) ?? 0),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancelar')),
+          FilledButton(
+            onPressed: () => Navigator.pop(c, double.tryParse(control.text.replaceAll(',', '.')) ?? 0),
+            child: const Text('Listo'),
+          ),
+        ],
+      ),
+    );
+    if (r != null) _poner(producto, uomId, r);
+  }
+
+  static String _textoCantidad(double c) => c == c.roundToDouble() ? '${c.toInt()}' : '$c';
+
+  Widget _fila(Ruta ruta, Moneda moneda, Map p) {
+    final uoms = ((p['uoms'] as List?) ?? const []).whereType<Map>().toList();
+    final uomId = _uomElegido[p['id']];
+    final unidad = uomId == null ? '${p['uom']}' : '${uoms.firstWhere((u) => u['id'] == uomId)['name']}';
+    final cantidad = _cantidad(p, uomId);
+    final kit = ((p['kit'] as List?) ?? const []).whereType<Map>().toList();
+    final enCarrito = _lineas.where((l) => l.productId == p['id']).fold(0.0, (s, l) => s + l.cantidad);
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      color: enCarrito > 0 ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35) : null,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${p['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text('${moneda(ruta.precio(widget.visitaId, p, uomId: uomId))} / $unidad'),
+              if (kit.isNotEmpty)
+                Text('Kit: ${kit.map((k) => '${k['cantidad']} ${k['name']}').join(', ')}',
+                    style: Theme.of(context).textTheme.bodySmall),
+              if (uoms.isNotEmpty)
+                Wrap(spacing: 6, children: [
+                  ChoiceChip(
+                    label: Text('${p['uom']}'),
+                    selected: uomId == null,
+                    onSelected: (_) => setState(() => _uomElegido.remove(p['id'])),
+                  ),
+                  for (final u in uoms)
+                    ChoiceChip(
+                      label: Text('${u['name']}'),
+                      selected: uomId == u['id'],
+                      onSelected: (_) => setState(() => _uomElegido[p['id'] as int] = u['id'] as int),
+                    ),
+                ]),
+            ]),
+          ),
+          if (cantidad == 0)
+            IconButton.filledTonal(
+              tooltip: 'Agregar',
+              iconSize: 28,
+              onPressed: () => _poner(p, uomId, 1),
+              icon: const Icon(Icons.add),
+            )
+          else
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                iconSize: 30,
+                onPressed: () => _poner(p, uomId, cantidad - 1),
+              ),
+              InkWell(
+                onTap: () => _teclear(p, uomId),
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).colorScheme.outline),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(_textoCantidad(cantidad),
+                      textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                iconSize: 30,
+                onPressed: () => _poner(p, uomId, cantidad + 1),
+              ),
+            ]),
+        ]),
+      ),
+    );
+  }
+
+  /// Revisar antes de enviar: renglones, contado o crédito, factura y nota.
+  Future<void> _revisar() async {
+    final ruta = _ruta!;
+    final v = _visita!;
+    final moneda = ruta.moneda(widget.jornadaId);
+    final aCredito = ((v['credito'] as Map?)?['a_credito']) == true;
+    final enviar = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (c) => StatefulBuilder(
+        builder: (c, refrescar) {
+          void cambiar(VoidCallback f) {
+            setState(f);
+            refrescar(() {});
+          }
+
+          final total = ruta.total(widget.visitaId, _lineas);
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(c).size.height * 0.85),
+              child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), children: [
+                Text('Pedido de ${v['cliente']}', style: Theme.of(c).textTheme.titleLarge),
+                for (final l in List.of(_lineas))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('${l.producto['name']}'),
+                    subtitle: Text('${_textoCantidad(l.cantidad)} ${l.unidad} × '
+                        '${moneda(ruta.precio(widget.visitaId, l.producto, uomId: l.uomId))}'),
+                    trailing: IconButton(
+                      tooltip: 'Quitar',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => cambiar(() => _lineas.remove(l)),
+                    ),
+                  ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('De contado'),
+                  subtitle: aCredito ? null : const Text('Este cliente no tiene crédito'),
+                  value: _contado,
+                  onChanged: aCredito ? (x) => cambiar(() => _contado = x) : null,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Quiere factura'),
+                  value: _factura,
+                  onChanged: (x) => cambiar(() => _factura = x),
+                ),
+                TextField(controller: _nota, decoration: const InputDecoration(labelText: 'Nota'), maxLines: 2),
+                const SizedBox(height: 12),
+                BotonGrande(
+                  icono: Icons.send,
+                  texto: 'Enviar ${moneda(total)}',
+                  onPressed: _lineas.isEmpty ? null : () => Navigator.pop(c, true),
+                ),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+    if (enviar == true) await _enviar();
+  }
+
   @override
   Widget build(BuildContext context) {
     final ruta = _ruta;
@@ -163,93 +325,42 @@ class _PantallaPedidoState extends State<PantallaPedido> {
       return Scaffold(appBar: AppBar(), body: const Center(child: CircularProgressIndicator()));
     }
     final moneda = ruta.moneda(widget.jornadaId);
-    final aCredito = ((v['credito'] as Map?)?['a_credito']) == true;
     final resultados = ruta.buscar(_busqueda);
     final total = ruta.total(widget.visitaId, _lineas);
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('${v['cliente']}'),
-          bottom: TabBar(tabs: [
-            const Tab(text: 'Productos'),
-            Tab(text: 'Pedido (${_lineas.length})'),
-          ]),
-          actions: [IconButton(tooltip: 'Escanear', onPressed: _escanear, icon: const Icon(Icons.qr_code_scanner))],
+    final piezas = _lineas.length;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${v['cliente']}'),
+        actions: [IconButton(tooltip: 'Escanear', onPressed: _escanear, icon: const Icon(Icons.qr_code_scanner))],
+      ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: TextField(
+            decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search), hintText: 'Nombre, clave o código', border: OutlineInputBorder()),
+            onChanged: (t) => setState(() => _busqueda = t),
+          ),
         ),
-        body: TabBarView(children: [
-          Column(children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: TextField(
-                decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search), hintText: 'Nombre, clave o código', border: OutlineInputBorder()),
-                onChanged: (t) => setState(() => _busqueda = t),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: resultados.length,
-                itemBuilder: (_, i) {
-                  final p = resultados[i];
-                  final kit = ((p['kit'] as List?) ?? const []).whereType<Map>().toList();
-                  return ListTile(
-                    title: Text('${p['name']}'),
-                    subtitle: kit.isEmpty
-                        ? Text('${p['uom']}')
-                        : Text('Kit: ${kit.map((k) => '${k['cantidad']} ${k['name']}').join(', ')}'),
-                    trailing: Text(moneda(ruta.precio(widget.visitaId, p))),
-                    onTap: () => _elegir(p),
-                  );
-                },
-              ),
-            ),
-          ]),
-          ListView(padding: const EdgeInsets.all(12), children: [
-            if (_lineas.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('Agregue productos.')),
-            for (final l in _lineas)
-              Card(
-                child: ListTile(
-                  title: Text('${l.producto['name']}'),
-                  subtitle: Text('${l.unidad} · ${moneda(ruta.precio(widget.visitaId, l.producto, uomId: l.uomId))}'),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle_outline),
-                      onPressed: () => setState(() {
-                        l.cantidad -= 1;
-                        if (l.cantidad <= 0) _lineas.remove(l);
-                      }),
-                    ),
-                    Text(l.cantidad == l.cantidad.roundToDouble() ? '${l.cantidad.toInt()}' : '${l.cantidad}'),
-                    IconButton(
-                      icon: const Icon(Icons.add_circle_outline),
-                      onPressed: () => setState(() => l.cantidad += 1),
-                    ),
-                  ]),
+        Expanded(
+          child: resultados.isEmpty
+              ? const Center(child: Text('No hay productos con esa búsqueda.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: resultados.length,
+                  itemBuilder: (_, i) => _fila(ruta, moneda, resultados[i]),
                 ),
-              ),
-            SwitchListTile(
-              title: const Text('De contado'),
-              subtitle: aCredito ? null : const Text('Este cliente no tiene crédito'),
-              value: _contado,
-              onChanged: aCredito ? (x) => setState(() => _contado = x) : null,
-            ),
-            SwitchListTile(
-              title: const Text('Quiere factura'),
-              value: _factura,
-              onChanged: (x) => setState(() => _factura = x),
-            ),
-            TextField(controller: _nota, decoration: const InputDecoration(labelText: 'Nota'), maxLines: 2),
-          ]),
-        ]),
-        bottomNavigationBar: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: BotonGrande(
-              icono: Icons.send,
-              texto: 'Enviar ${moneda(total)}',
-              onPressed: _lineas.isEmpty || _enviando ? null : _enviar,
-            ),
+        ),
+      ]),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: BotonGrande(
+            icono: Icons.shopping_cart_checkout,
+            texto: piezas == 0
+                ? 'Agregue productos'
+                : '${piezas == 1 ? '1 producto' : '$piezas productos'} · ${moneda(total)} · Revisar',
+            onPressed: piezas == 0 || _enviando ? null : _revisar,
           ),
         ),
       ),
@@ -307,8 +418,18 @@ class _CobroAlVenderState extends State<_CobroAlVender> {
   Future<void> _registrar() async {
     final recibido = double.tryParse(_recibido.text.replaceAll(',', '')) ?? 0;
     final monto = widget.moneda.redondear(_esTransferencia ? widget.total : (recibido < widget.total ? recibido : widget.total));
-    if (monto <= 0 || _diario == null) return;
-    if (_esTransferencia && widget.config['a_bordo'] == true && _referencia.text.trim().isEmpty) return;
+    if (_diario == null) {
+      avisar(context, 'No hay formas de cobro configuradas. En Odoo: Ajustes › Venta en ruta › Formas de cobro.', error: true);
+      return;
+    }
+    if (monto <= 0) {
+      avisar(context, 'Escriba cuánto recibió.', error: true);
+      return;
+    }
+    if (_esTransferencia && widget.config['a_bordo'] == true && _referencia.text.trim().isEmpty) {
+      avisar(context, 'Escriba la referencia de la transferencia.', error: true);
+      return;
+    }
     try {
       await widget.motor.registrar('anticipo', {
         'visita_id': widget.visitaId,
@@ -338,11 +459,20 @@ class _CobroAlVenderState extends State<_CobroAlVender> {
               items: [for (final d in _diarios) DropdownMenuItem(value: d['id'] as int, child: Text('${d['name']}'))],
               onChanged: (x) => setState(() => _diario = x),
             ),
+          if (_registra && _diarios.isEmpty)
+            const Text('No hay formas de cobro configuradas en Odoo (Ajustes › Venta en ruta).',
+                style: TextStyle(color: Colors.red)),
           if (!_esTransferencia)
             TextField(
               controller: _recibido,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Recibido'),
+              decoration: InputDecoration(
+                labelText: 'Recibido',
+                suffixIcon: TextButton(
+                  onPressed: () => setState(() => _recibido.text = widget.total.toStringAsFixed(2)),
+                  child: const Text('Exacto'),
+                ),
+              ),
               onChanged: (_) => setState(() {}),
             ),
           if (!_esTransferencia && recibido > 0)

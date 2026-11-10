@@ -60,7 +60,18 @@ class _PantallaCobroState extends State<PantallaCobro> {
     final ruta = _ruta!;
     final moneda = ruta.moneda(widget.jornadaId);
     final monto = moneda.redondear(double.tryParse(_monto.text.replaceAll(',', '')) ?? 0);
-    if (monto <= 0 || _diario == null) return;
+    if (_diario == null) {
+      avisar(context, 'No hay formas de cobro configuradas. En Odoo: Ajustes › Venta en ruta › Formas de cobro.', error: true);
+      return;
+    }
+    if (monto <= 0) {
+      avisar(context, 'Escriba el monto cobrado.', error: true);
+      return;
+    }
+    if (_facturas.isEmpty && widget.motor.conSenal) {
+      avisar(context, 'El cliente no tiene facturas por cobrar.', error: true);
+      return;
+    }
     final diario = _diariosDe(ruta).firstWhere((d) => d['id'] == _diario);
     if (diario['efectivo'] != true && ruta.config(widget.jornadaId)['a_bordo'] == true && _referencia.text.trim().isEmpty) {
       avisar(context, 'Escriba la referencia de la transferencia.', error: true);
@@ -125,6 +136,12 @@ class _PantallaCobroState extends State<PantallaCobro> {
             ),
           const SizedBox(height: 8),
           Text('Saldo elegido ${moneda(_saldo)}'),
+          if (diarios.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('No hay formas de cobro configuradas en Odoo (Ajustes › Venta en ruta).',
+                  style: TextStyle(color: Colors.red)),
+            ),
           if (diarios.length > 1)
             DropdownButtonFormField<int>(
               initialValue: _diario,
@@ -135,7 +152,13 @@ class _PantallaCobroState extends State<PantallaCobro> {
           TextField(
             controller: _monto,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Monto cobrado'),
+            decoration: InputDecoration(
+              labelText: 'Monto cobrado',
+              suffixIcon: TextButton(
+                onPressed: () => setState(() => _monto.text = _saldo.toStringAsFixed(2)),
+                child: const Text('Todo'),
+              ),
+            ),
           ),
           if (esTransferencia)
             TextField(controller: _referencia, decoration: const InputDecoration(labelText: 'Referencia de la transferencia')),
@@ -143,7 +166,7 @@ class _PantallaCobroState extends State<PantallaCobro> {
           BotonGrande(
             icono: Icons.check,
             texto: 'Registrar cobro',
-            onPressed: _guardando || _diario == null || (_facturas.isEmpty && widget.motor.conSenal) ? null : _guardar,
+            onPressed: _guardando ? null : _guardar,
           ),
         ],
       ),
