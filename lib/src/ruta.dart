@@ -148,10 +148,13 @@ class Ruta {
     if (cambios.isEmpty) return visita;
     final v = Map<String, Object?>.from(visita.cast<String, Object?>());
     final contacto = Map<String, Object?>.from(((v['contacto'] as Map?) ?? const {}).cast<String, Object?>());
+    final fiscal = Map<String, Object?>.from(((v['fiscal'] as Map?) ?? const {}).cast<String, Object?>());
     for (final c in cambios) {
       contacto.addAll(((c.datos['contacto'] as Map?) ?? const {}).cast<String, Object?>());
+      fiscal.addAll(((c.datos['fiscal'] as Map?) ?? const {}).cast<String, Object?>());
     }
     v['contacto'] = contacto;
+    v['fiscal'] = fiscal;
     v['comercial'] = contacto['comercial'] ?? v['comercial'];
     v['telefono'] = contacto['telefono'] ?? v['telefono'];
     v['direccion'] = direccionDe(contacto);
@@ -172,7 +175,12 @@ class Ruta {
             'comercial': a.datos['comercial'] ?? '',
             'telefono': a.datos['telefono'] ?? '',
             'direccion': direccionDe(a.datos),
-            'contacto': {for (final k in ['comercial', 'telefono', 'correo', 'calle', 'colonia', 'ciudad', 'cp']) k: a.datos[k] ?? ''},
+            'contacto': {
+              for (final k in ['comercial', 'telefono', 'correo', 'calle', 'colonia', 'ciudad', 'cp']) k: a.datos[k] ?? '',
+              'estado': a.datos['estado'] ?? false,
+              'pais': a.datos['pais'] ?? false,
+            },
+            'fiscal': {...((a.datos['fiscal'] as Map?) ?? const {}), 'cp': a.datos['cp'] ?? ''},
             'estado': 'pendiente',
             'secuencia': 100000,
             'alta_ruta': true,

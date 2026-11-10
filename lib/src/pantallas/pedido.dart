@@ -193,7 +193,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-            color: enCarrito > 0 ? Theme.of(context).colorScheme.primary : Colors.grey.shade300,
+            color: enCarrito > 0 ? Theme.of(context).colorScheme.primary : Colors.grey.shade500,
             width: enCarrito > 0 ? 1.5 : 1),
       ),
       child: Padding(
@@ -206,11 +206,12 @@ class _PantallaPedidoState extends State<PantallaPedido> {
             ),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${p['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text('${moneda(ruta.precio(widget.visitaId, p, uomId: uomId))} / $unidad'),
+              Text('${p['name']}', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF111111))),
+              Text('${moneda(ruta.precio(widget.visitaId, p, uomId: uomId))} / $unidad',
+                  style: const TextStyle(color: Color(0xFF222222))),
               if (kit.isNotEmpty)
                 Text('Kit: ${kit.map((k) => '${k['cantidad']} ${k['name']}').join(', ')}',
-                    style: Theme.of(context).textTheme.bodySmall),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF333333))),
               if (uoms.isNotEmpty)
                 Wrap(spacing: 6, children: [
                   ChoiceChip(

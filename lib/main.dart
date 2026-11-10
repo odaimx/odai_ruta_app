@@ -64,8 +64,9 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'Odai Ruta',
       debugShowCheckedModeBanner: false,
+      // Siempre en claro, como la pantalla del vendedor en Odoo: en modo oscuro las letras se veían tenues.
       theme: temaOdai(Brightness.light),
-      darkTheme: temaOdai(Brightness.dark),
+      themeMode: ThemeMode.light,
       home: ListenableBuilder(
         listenable: widget.motor,
         builder: (context, _) {
@@ -87,6 +88,9 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
 const azulMarino = Color(0xFF1B2A4A);
 const moradoOdai = Color(0xFF8A64DE);
 const azulOdai = Color(0xFF54AAF6);
+/// Borde de buscadores, campos y marcos: gris oscuro para que se vea con sol.
+const bordeOdai = Color(0xFF616161);
+const radioMarco = 8.0;
 
 ThemeData temaOdai(Brightness brillo) {
   final oscuro = brillo == Brightness.dark;
@@ -102,5 +106,26 @@ ThemeData temaOdai(Brightness brillo) {
     useMaterial3: true,
     appBarTheme: const AppBarTheme(backgroundColor: azulMarino, foregroundColor: Colors.white),
     cardTheme: CardThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+    // Letras y bordes más marcados para leer bien en la calle.
+    textTheme: ThemeData(brightness: brillo).textTheme.apply(
+          bodyColor: oscuro ? Colors.white : const Color(0xFF111111),
+          displayColor: oscuro ? Colors.white : const Color(0xFF111111),
+        ),
+    dividerTheme: DividerThemeData(color: oscuro ? Colors.white54 : const Color(0xFF9E9E9E)),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(radioMarco), borderSide: const BorderSide(color: bordeOdai)),
+      enabledBorder:
+          OutlineInputBorder(borderRadius: BorderRadius.circular(radioMarco), borderSide: const BorderSide(color: bordeOdai)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(radioMarco), borderSide: const BorderSide(color: azulMarino, width: 2)),
+      labelStyle: const TextStyle(color: Color(0xFF333333)),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: oscuro ? Colors.white : azulMarino,
+        side: const BorderSide(color: bordeOdai),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco)),
+      ),
+    ),
   );
 }

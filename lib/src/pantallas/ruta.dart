@@ -116,9 +116,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
               ),
               if (jornada['state'] == 'abierta') ...[
                 const SizedBox(width: 8),
-                FilledButton.icon(
+                OutlinedButton.icon(
                   onPressed: _clienteNuevo,
-                  style: FilledButton.styleFrom(minimumSize: const Size(0, 56)),
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 56)),
                   icon: const Icon(Icons.person_add),
                   label: const Text('Nuevo'),
                 ),

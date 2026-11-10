@@ -1,5 +1,5 @@
 /// Versión de la app que se reporta al servidor. Debe coincidir con `version` de pubspec.yaml.
-const String appVersion = '1.0.5';
+const String appVersion = '1.0.6';
 
 /// Número de compilación que pone el CI (--dart-define=COMPILACION=...).
 const String compilacion = String.fromEnvironment('COMPILACION', defaultValue: 'local');
