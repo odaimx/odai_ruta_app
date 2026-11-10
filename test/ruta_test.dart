@@ -76,5 +76,9 @@ void main() {
     final facturas = ruta.facturas(10);
     expect(facturas.map((f) => f['id']), [101]);
     expect(ruta.porCobrar(10), 150.0);
+    final tablero = ruta.tablero(3);
+    expect(tablero.vendido, 100.0);
+    expect(tablero.cobrado, 350.0);
+    expect([tablero.visitas, tablero.hechas, tablero.conPedido, tablero.sinVenta, tablero.pendientes], [3, 2, 1, 1, 1]);
   });
 }

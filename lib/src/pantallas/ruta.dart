@@ -79,7 +79,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
         .visitas(widget.jornadaId)
         .where((v) => t.isEmpty || '${v['cliente']} ${v['comercial']} ${(v['codigos'] as List?)?.join(' ')}'.toLowerCase().contains(t))
         .toList();
-    final faltan = ruta.visitas(widget.jornadaId).where((v) => ruta.estado(v) == 'pendiente').length;
     final aviso = datos['licencia_aviso'] as String?;
     return Scaffold(
       appBar: AppBar(title: Text('${jornada['ruta']}'), actions: [
@@ -93,16 +92,13 @@ class _PantallaRutaState extends State<PantallaRuta> {
         children: [
           if (aviso != null && aviso.isNotEmpty)
             MaterialBanner(content: Text(aviso), actions: const [SizedBox.shrink()]),
+          _PanelTablero(tablero: ruta.tablero(widget.jornadaId), moneda: moneda),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: TextField(
               decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Buscar cliente', border: OutlineInputBorder()),
               onChanged: (v) => setState(() => _filtro = v),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('$faltan por visitar de ${ruta.visitas(widget.jornadaId).length}'),
           ),
           Expanded(
             child: ListView.builder(
@@ -144,6 +140,47 @@ class _PantallaRutaState extends State<PantallaRuta> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+
+class _PanelTablero extends StatelessWidget {
+  const _PanelTablero({required this.tablero, required this.moneda});
+
+  final Tablero tablero;
+  final Moneda moneda;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    Widget dato(String titulo, String valor, {String? pie}) => Expanded(
+          child: Column(children: [
+            Text(titulo, style: tema.textTheme.labelMedium),
+            FittedBox(child: Text(valor, style: tema.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold))),
+            if (pie != null) Text(pie, style: tema.textTheme.bodySmall),
+          ]),
+        );
+    final avance = tablero.visitas == 0 ? 0.0 : tablero.hechas / tablero.visitas;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      color: tema.colorScheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(children: [
+          Row(children: [
+            dato('Vendido', moneda(tablero.vendido)),
+            dato('Cobrado', moneda(tablero.cobrado)),
+            dato('Visitas', '${tablero.hechas}/${tablero.visitas}',
+                pie: '${tablero.conPedido} con pedido · ${tablero.sinVenta} sin venta'),
+          ]),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(value: avance, minHeight: 6, borderRadius: BorderRadius.circular(3)),
+          const SizedBox(height: 4),
+          Text(tablero.pendientes == 0 ? 'Ruta completa' : '${tablero.pendientes} por visitar',
+              style: tema.textTheme.bodySmall),
+        ]),
       ),
     );
   }

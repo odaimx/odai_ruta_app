@@ -60,6 +60,27 @@ class Linea {
       };
 }
 
+/// Resumen del día del vendedor.
+class Tablero {
+  const Tablero({
+    required this.vendido,
+    required this.cobrado,
+    required this.visitas,
+    required this.hechas,
+    required this.conPedido,
+    required this.sinVenta,
+  });
+
+  final double vendido;
+  final double cobrado;
+  final int visitas;
+  final int hechas;
+  final int conPedido;
+  final int sinVenta;
+
+  int get pendientes => visitas - hechas;
+}
+
 /// Lo que el vendedor ve de su ruta, armado con lo que bajó de Odoo más lo que aún espera en la cola (así un
 /// pedido capturado sin señal ya se ve en la lista y en el saldo del cliente).
 class Ruta {
@@ -155,6 +176,25 @@ class Ruta {
   }
 
   double porCobrar(int visitaId) => facturas(visitaId).fold(0.0, (s, f) => s + _num(f['saldo']));
+
+  /// Números del día para el tablero: lo de Odoo más lo que espera en la cola (se ve aunque no haya señal).
+  Tablero tablero(int jornadaId) {
+    final datos = (jornada(jornadaId)?['jornada'] as Map?) ?? const {};
+    final todas = visitas(jornadaId);
+    final ids = todas.map((v) => v['id']).toSet();
+    final enCola = _pendientes.where((o) => ids.contains(o.datos['visita_id']));
+    final estados = todas.map(estado).toList();
+    return Tablero(
+      vendido: _num(datos['monto']) +
+          enCola.where((o) => o.tipo == 'pedido').fold(0.0, (s, o) => s + _num(o.datos['total'])),
+      cobrado: _num(datos['cobrado']) +
+          enCola.where((o) => o.tipo == 'cobro' || o.tipo == 'anticipo').fold(0.0, (s, o) => s + _num(o.datos['monto'])),
+      visitas: todas.length,
+      hechas: estados.where((e) => e != 'pendiente').length,
+      conPedido: estados.where((e) => e == 'pedido').length,
+      sinVenta: estados.where((e) => e == 'sin_venta').length,
+    );
+  }
 
   /// Lo pedido sin señal que todavía no llega a Odoo (cuenta contra el crédito disponible).
   double pedidoEnCola(int visitaId) =>
