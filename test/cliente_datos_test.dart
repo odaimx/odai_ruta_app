@@ -80,4 +80,52 @@ void main() {
     expect(cambio.datos['contacto'], {'calle': 'Hidalgo 10'});
     expect(cambio.datos.containsKey('fiscal'), isFalse, reason: 'Los datos fiscales no cambiaron');
   });
+
+  testWidgets('alta: cada dato queda en su campo aunque los catálogos lleguen después', (tester) async {
+    late Motor motor;
+    await tester.runAsync(() async {
+      final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath,
+          options: OpenDatabaseOptions(version: 1, onCreate: BaseLocal.crearTablas, singleInstance: false));
+      final base = BaseLocal(db);
+      motor = Motor(almacen: AlmacenEnMemoria(), abrirBase: (_) async => base);
+      motor.base = base;
+      motor.cola = Cola(base);
+      await base.escribirVarios({
+        'jornadas': [
+          {
+            'jornada': {'id': 3, 'ruta': 'Ruta Norte', 'state': 'abierta'},
+            'config': {
+              'catalogos_fiscales': {
+                'regimen': [{'id': 1, 'name': '601-General de Ley', 'clave': '601'}],
+                'metodo': [{'id': 9, 'name': 'PUE-Pago en una sola exhibición', 'clave': 'PUE'}],
+              },
+              'catalogos_direccion': {
+                'mexico': 156,
+                'paises': [{'id': 156, 'name': 'México'}],
+                'estados': [{'id': 31, 'name': 'Yucatán', 'pais': 156}],
+              },
+            },
+            'visitas': const [],
+          }
+        ],
+      });
+    });
+    tester.view.physicalSize = const Size(800, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: PantallaDatosCliente(motor: motor, jornadaId: 3)));
+    await tester.pump();
+    TextField campo(String etiqueta) => tester.widget<TextField>(find.ancestor(
+        of: find.text(etiqueta), matching: find.byType(TextField)));
+    await tester.enterText(find.ancestor(of: find.text('Nombre comercial'), matching: find.byType(TextField)), 'la esquina');
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    await tester.pumpAndSettle();
+    expect(campo('Nombre comercial').controller!.text, 'la esquina');
+    expect(campo('RFC').controller!.text, '');
+    await tester.enterText(find.ancestor(of: find.text('Teléfono'), matching: find.byType(TextField)), '9991234567');
+    await tester.pumpAndSettle();
+    expect(campo('Teléfono').controller!.text, '9991234567');
+    expect(campo('Nombre comercial').controller!.text, 'la esquina');
+    expect(campo('RFC').controller!.text, '');
+  });
 }
