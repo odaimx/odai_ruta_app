@@ -44,6 +44,7 @@ android {
                 storePassword = firma.getProperty("storePassword")
                 keyAlias = firma.getProperty("keyAlias")
                 keyPassword = firma.getProperty("keyPassword")
+                firma.getProperty("storeType")?.let { storeType = it }
             }
         }
     }
