@@ -34,6 +34,15 @@ jobs:
           channel: stable
           cache: true
 
+      # Sin firma de entrega, el APK se firma con la llave de depuración. Se guarda en la caché de GitHub para
+      # que sea la misma en cada compilación y cada APK de prueba se instale encima del anterior (si cambiara,
+      # Android diría "conflicto con un paquete"). La caché se borra tras 7 días sin compilaciones.
+      - name: Llave de depuración fija
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: odai-ruta-debug-keystore-v1
+
       - name: Dependencias
         run: flutter pub get
 
