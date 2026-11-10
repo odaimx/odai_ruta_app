@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../actualizar.dart';
+import '../api.dart';
 import '../base_local.dart';
 import '../motor.dart';
 import '../version.dart';
@@ -77,6 +79,7 @@ class _PantallaInicioState extends State<PantallaInicio> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (motor.actualizacion != null) _TarjetaActualizar(motor: motor),
             if (aviso != null) _Aviso(texto: aviso, color: tema.colorScheme.errorContainer),
             if (motor.nivelLicencia == 'aviso' && motor.mensajeLicencia.isNotEmpty)
               _Aviso(texto: motor.mensajeLicencia, color: tema.colorScheme.tertiaryContainer),
@@ -129,6 +132,77 @@ class _PantallaInicioState extends State<PantallaInicio> {
             Center(child: Text('Versión $appVersionCompleta', style: tema.textTheme.bodySmall)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _TarjetaActualizar extends StatefulWidget {
+  const _TarjetaActualizar({required this.motor});
+
+  final Motor motor;
+
+  @override
+  State<_TarjetaActualizar> createState() => _TarjetaActualizarState();
+}
+
+class _TarjetaActualizarState extends State<_TarjetaActualizar> {
+  bool _bajando = false;
+  double? _avance;
+  String? _mensaje;
+
+  Future<void> _actualizar() async {
+    setState(() {
+      _bajando = true;
+      _avance = null;
+      _mensaje = null;
+    });
+    try {
+      final r = await actualizarApp(widget.motor, avance: (a) {
+        if (mounted) setState(() => _avance = a);
+      });
+      if (mounted && r == 'permiso') {
+        setState(() => _mensaje = 'Permita "Instalar apps de esta fuente", regrese y toque Actualizar otra vez.');
+      }
+    } on SinSenal {
+      if (mounted) setState(() => _mensaje = 'Sin señal. Intente donde haya internet (mejor con wifi).');
+    } on ApiError catch (e) {
+      if (mounted) setState(() => _mensaje = e.mensaje);
+    } catch (e) {
+      if (mounted) setState(() => _mensaje = 'No se pudo actualizar: $e');
+    } finally {
+      if (mounted) setState(() => _bajando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final version = widget.motor.actualizacion!;
+    final tema = Theme.of(context);
+    final notas = '${version['notas'] ?? ''}'.trim();
+    return Card(
+      color: tema.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Hay una versión nueva: ${version['version']}', style: tema.textTheme.titleMedium),
+          if (notas.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(notas)),
+          if (version['obligatoria'] == true)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('Es obligatoria: actualice para seguir vendiendo.', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          const SizedBox(height: 8),
+          if (_bajando) ...[
+            LinearProgressIndicator(value: _avance),
+            const SizedBox(height: 4),
+            Text(_avance == null ? 'Descargando...' : 'Descargando ${(_avance! * 100).round()}%'),
+          ] else
+            FilledButton.icon(onPressed: _actualizar, icon: const Icon(Icons.system_update), label: const Text('Actualizar')),
+          if (_mensaje != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_mensaje!)),
+          const SizedBox(height: 4),
+          Text('Lo guardado en el celular no se pierde.', style: tema.textTheme.bodySmall),
+        ]),
       ),
     );
   }

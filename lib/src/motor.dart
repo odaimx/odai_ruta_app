@@ -86,6 +86,12 @@ class Motor extends ChangeNotifier {
   String get nivelLicencia => ((_estado['licencia'] as Map?)?['nivel'] as String?) ?? 'ok';
   String get mensajeLicencia => ((_estado['licencia'] as Map?)?['mensaje'] as String?) ?? '';
   String get versionMinima => (_estado['version_minima'] as String?) ?? '1.0.0';
+  /// Versión nueva que subió el supervisor en Odoo: `{id, version, notas, obligatoria}`, o null.
+  Map? get actualizacion {
+    final a = _estado['actualizacion'];
+    return a is Map && compararVersion(appVersion, '${a['version']}') < 0 ? a : null;
+  }
+
   bool get debeActualizar => compararVersion(appVersion, versionMinima) < 0;
 
   /// El reloj del celular se atrasó respecto de la hora más alta que ya vio (para estirar el permiso).
@@ -353,6 +359,7 @@ class Motor extends ChangeNotifier {
       ..['comandos_hechos'] = <int>[]
       ..['licencia'] = r['licencia']
       ..['version_minima'] = r['version_minima'] ?? '1.0.0'
+      ..['actualizacion'] = r['actualizacion']
       ..['bloqueado'] = r['estado'] == 'bloqueado';
     if (r['trabajar_hasta'] is String) _estado['trabajar_hasta'] = r['trabajar_hasta'];
     if (r.containsKey('pin')) {

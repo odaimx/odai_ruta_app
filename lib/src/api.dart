@@ -144,6 +144,47 @@ class Api {
 
   Future<Map<String, Object?>> bajar(Map<String, Object?> desde) => llamar('bajar', {'desde': desde});
 
+  /// Descarga un archivo (el APK de una versión) a [destino], avisando el avance en bytes.
+  Future<void> descargar(String accion, Map<String, Object?> cuerpo, File destino,
+      {void Function(int recibidos, int? total)? avance}) async {
+    try {
+      await _elegirBase();
+      final peticion = http.Request('POST', Uri.parse('$url$prefijo/$accion'))
+        ..headers.addAll({
+          'Content-Type': 'application/json',
+          if (db.isNotEmpty) 'X-Odoo-Database': db,
+          if (_cookie != null && _cookie!.isNotEmpty) 'Cookie': _cookie!,
+          if (token != null) 'Authorization': 'Bearer $token',
+        })
+        ..body = jsonEncode(cuerpo);
+      final respuesta = await _cliente.send(peticion).timeout(espera);
+      if (respuesta.statusCode != 200) {
+        await respuesta.stream.drain<void>();
+        throw ApiError('servidor', 'No se pudo descargar la actualización (${respuesta.statusCode}).',
+            respuesta.statusCode);
+      }
+      final salida = destino.openWrite();
+      var recibidos = 0;
+      try {
+        await for (final trozo in respuesta.stream.timeout(espera)) {
+          salida.add(trozo);
+          recibidos += trozo.length;
+          avance?.call(recibidos, respuesta.contentLength);
+        }
+      } finally {
+        await salida.close();
+      }
+    } on SocketException catch (e) {
+      throw SinSenal(e.message);
+    } on TimeoutException {
+      throw SinSenal('tiempo agotado');
+    } on http.ClientException catch (e) {
+      throw SinSenal(e.message);
+    } on HandshakeException catch (e) {
+      throw SinSenal(e.message);
+    }
+  }
+
   /// Miniaturas de productos: `{id: {b64, tipo, version}}`.
   Future<Map> imagenes(List<int> ids) async {
     final r = await llamar('imagenes', {'ids': ids});
