@@ -76,7 +76,9 @@ class _PantallaPinState extends State<PantallaPin> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+              Image.asset('assets/logo.png', height: 44),
+              const SizedBox(height: 16),
               Text(motor.nombreVendedor, style: tema.textTheme.titleLarge),
               Text(motor.nombreEmpresa, style: tema.textTheme.bodyMedium),
               const SizedBox(height: 24),

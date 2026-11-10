@@ -60,6 +60,11 @@ class _PantallaInicioState extends State<PantallaInicio> {
     final aviso = motor.motivoNoVender;
     return Scaffold(
       appBar: AppBar(
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Image.asset('assets/logo_blanco.png', fit: BoxFit.contain),
+        ),
+        leadingWidth: 76,
         title: Text(motor.nombreVendedor.isEmpty ? 'Odai Ruta' : motor.nombreVendedor),
         actions: [
           IconButton(

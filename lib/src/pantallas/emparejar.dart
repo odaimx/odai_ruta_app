@@ -60,6 +60,8 @@ class _PantallaEmparejarState extends State<PantallaEmparejar> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Center(child: Image.asset('assets/logo.png', height: 48)),
+              const SizedBox(height: 16),
               Text('Conectar este celular', style: tema.textTheme.headlineSmall),
               const SizedBox(height: 8),
               const Text('Pida a su supervisor el código QR del celular (en Odoo: Venta en ruta › Celulares) '

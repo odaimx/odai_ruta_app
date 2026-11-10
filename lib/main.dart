@@ -64,9 +64,8 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
     return MaterialApp(
       title: 'Odai Ruta',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF1F6FB2), useMaterial3: true),
-      darkTheme: ThemeData(
-          colorSchemeSeed: const Color(0xFF1F6FB2), useMaterial3: true, brightness: Brightness.dark),
+      theme: temaOdai(Brightness.light),
+      darkTheme: temaOdai(Brightness.dark),
       home: ListenableBuilder(
         listenable: widget.motor,
         builder: (context, _) {
@@ -82,4 +81,26 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+/// Colores de Odai: azul marino de base, el morado del logo como acento y su azul claro como tercer color.
+const azulMarino = Color(0xFF1B2A4A);
+const moradoOdai = Color(0xFF8A64DE);
+const azulOdai = Color(0xFF54AAF6);
+
+ThemeData temaOdai(Brightness brillo) {
+  final oscuro = brillo == Brightness.dark;
+  final colores = ColorScheme.fromSeed(
+    seedColor: azulMarino,
+    brightness: brillo,
+    primary: oscuro ? const Color(0xFF9DB4E0) : azulMarino,
+    secondary: moradoOdai,
+    tertiary: azulOdai,
+  );
+  return ThemeData(
+    colorScheme: colores,
+    useMaterial3: true,
+    appBarTheme: const AppBarTheme(backgroundColor: azulMarino, foregroundColor: Colors.white),
+    cardTheme: CardThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+  );
 }

@@ -1,7 +1,7 @@
 name: odai_ruta
 description: "Odai Ruta: venta en ruta sin internet para Odoo 20."
 publish_to: 'none'
-version: 1.0.2+1
+version: 1.0.3+1
 
 environment:
   sdk: ^3.13.7
@@ -26,3 +26,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo.png
+    - assets/logo_blanco.png
