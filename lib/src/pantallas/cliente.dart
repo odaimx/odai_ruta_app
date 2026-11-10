@@ -56,14 +56,24 @@ class _PantallaClienteState extends State<PantallaCliente> {
     final tema = Theme.of(context);
     final pedidos = ((v['pedidos'] as List?) ?? const []).whereType<Map>().toList();
     return Scaffold(
-      appBar: AppBar(title: Text('${v['cliente']}'), actions: [
-        IconButton(
-          tooltip: 'Editar datos',
-          icon: const Icon(Icons.edit),
-          onPressed: () => _ir(PantallaDatosCliente(motor: widget.motor, jornadaId: widget.jornadaId, visita: v)),
-        ),
-      ]),
-      body: ListView(
+      appBar: AppBar(title: Text('${v['cliente']}')),
+      body: Column(children: [
+        BarraAcciones(acciones: [
+          if (abierta) ...[
+            Accion(Icons.add_shopping_cart, 'Levantar pedido',
+                () => _ir(PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
+                principal: true),
+            Accion(Icons.payments, 'Cobrar',
+                () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+            if (estado == 'pendiente')
+              Accion(Icons.block, 'Sin venta',
+                  () => _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+          ],
+          Accion(Icons.edit, 'Modificar cliente',
+              () => _ir(PantallaDatosCliente(motor: widget.motor, jornadaId: widget.jornadaId, visita: v))),
+        ]),
+        Expanded(
+          child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           if ((v['comercial'] as String?)?.isNotEmpty == true) Text('${v['comercial']}', style: tema.textTheme.titleMedium),
@@ -91,26 +101,6 @@ class _PantallaClienteState extends State<PantallaCliente> {
               ]),
             ),
           ),
-          if (abierta) ...[
-            BotonGrande(
-              icono: Icons.add_shopping_cart,
-              texto: 'Levantar pedido',
-              onPressed: () => _ir(PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
-            ),
-            BotonGrande(
-              icono: Icons.payments,
-              texto: 'Cobrar',
-              tono: true,
-              onPressed: () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
-            ),
-            if (estado == 'pendiente')
-              BotonGrande(
-                icono: Icons.block,
-                texto: 'Sin venta',
-                tono: true,
-                onPressed: () => _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
-              ),
-          ],
           if (pedidos.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text('Pedidos', style: tema.textTheme.titleSmall),
@@ -125,6 +115,8 @@ class _PantallaClienteState extends State<PantallaCliente> {
           ],
         ],
       ),
+        ),
+      ]),
     );
   }
 }

@@ -66,21 +66,19 @@ class _PantallaInicioState extends State<PantallaInicio> {
         ),
         leadingWidth: 76,
         title: Text(motor.nombreVendedor.isEmpty ? 'Odai Ruta' : motor.nombreVendedor),
-        actions: [
-          IconButton(
-            tooltip: 'Cambiar mi PIN',
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PantallaNuevoPin(motor: motor))),
-            icon: const Icon(Icons.password),
-          ),
-          IconButton(
-            tooltip: 'Bloquear',
-            onPressed: motor.pin == null ? null : motor.bloquearPantalla,
-            icon: const Icon(Icons.lock_outline),
-          ),
-        ],
       ),
       bottomNavigationBar: const PieOdai(),
-      body: RefreshIndicator(
+      body: Column(children: [
+        BarraAcciones(acciones: [
+          Accion(Icons.sync, motor.sincronizando ? 'Sincronizando...' : 'Sincronizar',
+              motor.sincronizando ? null : () => motor.sincronizar(),
+              principal: true),
+          Accion(Icons.password, 'Cambiar mi PIN',
+              () => Navigator.push(context, MaterialPageRoute(builder: (_) => PantallaNuevoPin(motor: motor)))),
+          if (motor.pin != null) Accion(Icons.lock_outline, 'Bloquear', motor.bloquearPantalla),
+        ]),
+        Expanded(
+          child: RefreshIndicator(
         onRefresh: () => motor.sincronizar(),
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -137,7 +135,9 @@ class _PantallaInicioState extends State<PantallaInicio> {
             const SizedBox(height: 24),
           ],
         ),
-      ),
+          ),
+        ),
+      ]),
     );
   }
 }

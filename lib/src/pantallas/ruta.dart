@@ -21,6 +21,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
   Ruta? _ruta;
   String _filtro = '';
 
+  /// Pendientes (por omisión), visitados o todos: los visitados no estorban al buscar.
+  String _vista = 'pendientes';
+
   @override
   void initState() {
     super.initState();
@@ -86,44 +89,49 @@ class _PantallaRutaState extends State<PantallaRuta> {
     final jornada = datos['jornada'] as Map;
     final moneda = ruta.moneda(widget.jornadaId);
     final t = _filtro.toLowerCase();
-    final visitas = ruta
-        .visitas(widget.jornadaId)
+    final todas = ruta.visitas(widget.jornadaId);
+    final visitas = todas
+        .where((v) => switch (_vista) {
+              'pendientes' => ruta.estado(v) == 'pendiente',
+              'visitados' => ruta.estado(v) != 'pendiente',
+              _ => true,
+            })
         .where((v) => t.isEmpty || '${v['cliente']} ${v['comercial']} ${(v['codigos'] as List?)?.join(' ')}'.toLowerCase().contains(t))
         .toList();
     final aviso = datos['licencia_aviso'] as String?;
+    final abierta = jornada['state'] == 'abierta';
+    final pendientesN = todas.where((v) => ruta.estado(v) == 'pendiente').length;
     return Scaffold(
-      appBar: AppBar(title: Text('${jornada['ruta']}'), actions: [
-        IconButton(
-          tooltip: 'Sincronizar',
-          onPressed: widget.motor.sincronizando ? null : () => widget.motor.sincronizar(),
-          icon: const Icon(Icons.sync),
-        ),
-      ]),
+      appBar: AppBar(title: Text('${jornada['ruta']}')),
       body: Column(
         children: [
+          BarraAcciones(acciones: [
+            if (abierta) Accion(Icons.person_add, 'Nuevo cliente', _clienteNuevo, principal: true),
+            Accion(Icons.sync, widget.motor.sincronizando ? 'Sincronizando...' : 'Sincronizar',
+                widget.motor.sincronizando ? null : () => widget.motor.sincronizar()),
+            if (abierta) Accion(Icons.flag, 'Cerrar jornada', _cerrar),
+          ]),
           if (aviso != null && aviso.isNotEmpty)
             MaterialBanner(content: Text(aviso), actions: const [SizedBox.shrink()]),
           _PanelTablero(tablero: ruta.tablero(widget.jornadaId), moneda: moneda),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search), hintText: 'Buscar cliente', border: OutlineInputBorder()),
-                  onChanged: (v) => setState(() => _filtro = v),
-                ),
-              ),
-              if (jornada['state'] == 'abierta') ...[
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _clienteNuevo,
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 56)),
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('Nuevo'),
-                ),
+            child: TextField(
+              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Buscar cliente'),
+              onChanged: (v) => setState(() => _filtro = v),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Filtros<String>(
+              opciones: [
+                ('pendientes', 'Pendientes ($pendientesN)'),
+                ('visitados', 'Visitados (${todas.length - pendientesN})'),
+                ('todos', 'Todos (${todas.length})'),
               ],
-            ]),
+              elegido: _vista,
+              onChanged: (v) => setState(() => _vista = v),
+            ),
           ),
           Expanded(
             child: ListView.builder(
@@ -157,13 +165,6 @@ class _PantallaRutaState extends State<PantallaRuta> {
               },
             ),
           ),
-          if (jornada['state'] == 'abierta')
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: BotonGrande(icono: Icons.flag, texto: 'Cerrar jornada', tono: true, onPressed: _cerrar),
-              ),
-            ),
         ],
       ),
     );

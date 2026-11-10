@@ -344,11 +344,9 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     final piezas = _lineas.length;
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: Text('${v['cliente']}'),
-        actions: [IconButton(tooltip: 'Escanear', onPressed: _escanear, icon: const Icon(Icons.qr_code_scanner))],
-      ),
+      appBar: AppBar(title: Text('${v['cliente']}')),
       body: Column(children: [
+        BarraAcciones(acciones: [Accion(Icons.qr_code_scanner, 'Escanear código', _escanear, principal: true)]),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
           child: TextField(

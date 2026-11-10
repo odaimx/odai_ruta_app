@@ -126,3 +126,88 @@ class PieOdai extends StatelessWidget {
     );
   }
 }
+
+/// Una acción de la barra: icono con su texto. La principal va rellena, las demás con marco.
+class Accion {
+  const Accion(this.icono, this.texto, this.onPressed, {this.principal = false});
+
+  final IconData icono;
+  final String texto;
+  final VoidCallback? onPressed;
+  final bool principal;
+}
+
+/// Barra de acciones debajo del título, igual en todas las pantallas (como los botones de Odoo): todas en una
+/// línea, del mismo tamaño y forma, siempre con su texto.
+class BarraAcciones extends StatelessWidget {
+  const BarraAcciones({super.key, required this.acciones});
+
+  final List<Accion> acciones;
+
+  @override
+  Widget build(BuildContext context) {
+    if (acciones.isEmpty) return const SizedBox.shrink();
+    const alto = Size(0, 44);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade400)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(children: [
+          for (final (i, a) in acciones.indexed) ...[
+            if (i > 0) const SizedBox(width: 8),
+            a.principal
+                ? FilledButton.icon(
+                    key: ValueKey('accion_${a.texto}'),
+                    onPressed: a.onPressed,
+                    style: FilledButton.styleFrom(minimumSize: alto),
+                    icon: Icon(a.icono, size: 20),
+                    label: Text(a.texto))
+                : OutlinedButton.icon(
+                    key: ValueKey('accion_${a.texto}'),
+                    onPressed: a.onPressed,
+                    style: OutlinedButton.styleFrom(minimumSize: alto),
+                    icon: Icon(a.icono, size: 20),
+                    label: Text(a.texto)),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// Filtros como las facetas de Odoo: uno elegido, resaltado.
+class Filtros<T> extends StatelessWidget {
+  const Filtros({super.key, required this.opciones, required this.elegido, required this.onChanged});
+
+  final List<(T, String)> opciones;
+  final T elegido;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(children: [
+        for (final (i, o) in opciones.indexed) ...[
+          if (i > 0) const SizedBox(width: 8),
+          ChoiceChip(
+            label: Text(o.$2),
+            selected: o.$1 == elegido,
+            showCheckmark: false,
+            selectedColor: tema.colorScheme.secondary.withValues(alpha: 0.18),
+            side: BorderSide(color: o.$1 == elegido ? tema.colorScheme.secondary : Colors.grey.shade500),
+            labelStyle: TextStyle(
+                color: const Color(0xFF111111), fontWeight: o.$1 == elegido ? FontWeight.w700 : FontWeight.w500),
+            onSelected: (_) => onChanged(o.$1),
+          ),
+        ],
+      ]),
+    );
+  }
+}
