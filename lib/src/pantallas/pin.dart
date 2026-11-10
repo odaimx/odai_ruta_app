@@ -96,7 +96,13 @@ class _PantallaPinState extends State<PantallaPin> {
                   child: Text(motor.ultimoError!, textAlign: TextAlign.center),
                 ),
               ] else ...[
-                Text('Escriba su PIN', style: tema.textTheme.titleMedium),
+                Text(motor.pinTemporal ? 'Escriba el PIN temporal' : 'Escriba su PIN', style: tema.textTheme.titleMedium),
+                if (motor.pinVencido)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('El PIN temporal ya venció. Presione "Olvidé mi PIN" para recibir otro.',
+                        textAlign: TextAlign.center, style: TextStyle(color: tema.colorScheme.error)),
+                  ),
                 const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
