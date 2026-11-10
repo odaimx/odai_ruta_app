@@ -205,7 +205,7 @@ class Motor extends ChangeNotifier {
       notifyListeners();
       return true;
     }
-    if (bloqueoPin || pinVencido) return false;
+    if (bloqueoPin) return false;
     if (await verificarPin(pinCapturado, datos)) {
       _estado['intentos_pin'] = 0;
       desbloqueado = true;
@@ -217,12 +217,6 @@ class Motor extends ChangeNotifier {
     await _guardarEstado();
     notifyListeners();
     return desbloqueado;
-  }
-
-  /// El PIN temporal que llegó por correo ya venció (15 minutos): hay que pedir otro.
-  bool get pinVencido {
-    final vence = leerHoraOdoo((_estado['pin'] as Map?)?['vence']);
-    return pinTemporal && vence != null && reloj().isAfter(vence);
   }
 
   /// El PIN que tiene es temporal (lo puso el supervisor): hay que cambiarlo por uno propio.
@@ -255,8 +249,6 @@ class Motor extends ChangeNotifier {
     if (api == null) throw ApiError('datos', 'El celular no está conectado a Odoo.');
     try {
       final r = await api!.llamar('solicitar_pin', {});
-      // Si se mandó por correo, el PIN temporal ya está en Odoo: se baja para poder entrar con él.
-      if (r['por_correo'] == true) await sincronizar();
       return '${r['mensaje'] ?? 'Listo. Su supervisor ya tiene el aviso.'}';
     } on SinSenal {
       throw ApiError('sin_senal', 'Necesita señal para pedir un PIN nuevo. Si no hay, pida al supervisor un QR nuevo.');
