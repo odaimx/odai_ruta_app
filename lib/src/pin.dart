@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -49,6 +50,12 @@ String pbkdf2Sha256Hex(String pin, String salHex, int iteraciones) {
     }
   }
   return _aHex(resultado);
+}
+
+/// Sal nueva de 16 bytes en hex (32 caracteres), con el generador seguro del sistema.
+String nuevaSal() {
+  final azar = Random.secure();
+  return _aHex(List.generate(16, (_) => azar.nextInt(256)));
 }
 
 /// Compara en tiempo constante.

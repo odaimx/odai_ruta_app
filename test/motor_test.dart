@@ -97,6 +97,10 @@ class OdooFalso {
           'motivos': [],
           'marcas': {'catalogo': catalogoMarca, 'precios': 'p1'},
         });
+      case 'pin':
+        r = json({'pin': {'sal': cuerpo['sal'], 'hash': cuerpo['hash'], 'iteraciones': 1000, 'temporal': false}});
+      case 'solicitar_pin':
+        r = json({'mensaje': 'Aviso enviado'});
       case 'imagenes':
         r = json({
           'imagenes': {
@@ -282,5 +286,22 @@ void main() {
       ..catalogoMarca = 'm2';
     await motor.sincronizar();
     expect(odoo.llamadas.where((l) => l == 'imagenes'), hasLength(2));
+  });
+
+  test('PIN temporal: obliga a poner uno propio, que se cifra en el celular', () async {
+    final motor = nuevoMotor();
+    await motor.iniciar();
+    await motor.emparejar(qr);
+    await motor.sincronizar();
+    expect(await motor.solicitarPin(), 'Aviso enviado');
+    expect(await motor.desbloquear('4821'), isTrue);
+    expect(() => motor.cambiarPin('12'), throwsA(isA<ApiError>()));
+    await motor.cambiarPin('9137');
+    expect(motor.pinTemporal, isFalse);
+    motor.bloquearPantalla();
+    expect(await motor.desbloquear('4821'), isFalse);
+    expect(await motor.desbloquear('9137'), isTrue);
+    odoo.conSenal = false;
+    await expectLater(motor.cambiarPin('2468'), throwsA(isA<ApiError>()));
   });
 }

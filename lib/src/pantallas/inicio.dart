@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../base_local.dart';
 import '../motor.dart';
 import '../version.dart';
+import 'pin.dart';
 import 'ruta.dart';
 
 String _fechaLocal(DateTime? utc) {
@@ -59,6 +60,11 @@ class _PantallaInicioState extends State<PantallaInicio> {
       appBar: AppBar(
         title: Text(motor.nombreVendedor.isEmpty ? 'Odai Ruta' : motor.nombreVendedor),
         actions: [
+          IconButton(
+            tooltip: 'Cambiar mi PIN',
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PantallaNuevoPin(motor: motor))),
+            icon: const Icon(Icons.password),
+          ),
           IconButton(
             tooltip: 'Bloquear',
             onPressed: motor.pin == null ? null : motor.bloquearPantalla,

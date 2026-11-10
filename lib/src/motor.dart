@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -216,6 +217,42 @@ class Motor extends ChangeNotifier {
     await _guardarEstado();
     notifyListeners();
     return desbloqueado;
+  }
+
+  /// El PIN que tiene es temporal (lo puso el supervisor): hay que cambiarlo por uno propio.
+  bool get pinTemporal => (_estado['pin'] as Map?)?['temporal'] == true;
+
+  /// El vendedor pone su propio PIN. Se cifra en el celular; Odoo solo recibe la sal y el hash. Necesita señal.
+  Future<void> cambiarPin(String nuevo) async {
+    if (!RegExp(r'^\d{4,6}$').hasMatch(nuevo)) throw ApiError('datos', 'El PIN debe tener de 4 a 6 números.');
+    if (api == null) throw ApiError('datos', 'El celular no está conectado a Odoo.');
+    final iteraciones = pin?.iteraciones ?? 120000;
+    final sal = nuevaSal();
+    final hash = await Isolate.run(() => pbkdf2Sha256Hex(nuevo, sal, iteraciones));
+    final Map<String, Object?> r;
+    try {
+      r = await api!.llamar('pin', {'sal': sal, 'hash': hash});
+    } on SinSenal {
+      throw ApiError('sin_senal', 'Necesita señal para cambiar el PIN. Intente donde haya internet.');
+    }
+    _estado
+      ..['pin'] = r['pin']
+      ..['intentos_pin'] = 0
+      ..['bloqueo_pin'] = false;
+    desbloqueado = true;
+    await _guardarEstado();
+    notifyListeners();
+  }
+
+  /// Olvidó su PIN: avisa al supervisor. El PIN temporal que él asigne llega al sincronizar.
+  Future<String> solicitarPin() async {
+    if (api == null) throw ApiError('datos', 'El celular no está conectado a Odoo.');
+    try {
+      final r = await api!.llamar('solicitar_pin', {});
+      return '${r['mensaje'] ?? 'Listo. Su supervisor ya tiene el aviso.'}';
+    } on SinSenal {
+      throw ApiError('sin_senal', 'Necesita señal para pedir un PIN nuevo. Si no hay, pida al supervisor un QR nuevo.');
+    }
   }
 
   void bloquearPantalla() {

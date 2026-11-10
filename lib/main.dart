@@ -76,6 +76,7 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
           }
           if (!motor.emparejado) return PantallaEmparejar(motor: motor);
           if (!motor.desbloqueado) return PantallaPin(motor: motor);
+          if (motor.pinTemporal) return PantallaNuevoPin(motor: motor, obligatorio: true);
           return PantallaInicio(motor: motor);
         },
       ),
