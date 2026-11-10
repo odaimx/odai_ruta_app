@@ -103,7 +103,10 @@ class Motor extends ChangeNotifier {
 
   /// Por qué no se puede vender ahora, o `null` si sí se puede.
   String? get motivoNoVender {
-    if (bloqueado) return 'El supervisor bloqueó este celular.';
+    if (bloqueado) {
+      return 'El supervisor bloqueó este celular. Lo que capture se queda guardado aquí y se envía a Odoo cuando '
+          'lo desbloqueen.';
+    }
     if (noAutorizado) return 'Este celular ya no está autorizado. Pida al supervisor un código nuevo.';
     if (debeActualizar) return 'Actualice la app: Odoo pide la versión $versionMinima o mayor.';
     if (nivelLicencia == 'off') return mensajeLicencia.isEmpty ? 'Licencia vencida o no activada.' : mensajeLicencia;

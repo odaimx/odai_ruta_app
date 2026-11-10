@@ -44,7 +44,6 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
 
   final _nombre = TextEditingController();
   final _rfc = TextEditingController();
-  final _razon = TextEditingController();
   late final Map<String, TextEditingController> _control;
   final Map<String, int?> _elegido = {};
   int? _pais;
@@ -81,7 +80,10 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
     _control = {for (final campo in _campos) campo.$1: TextEditingController(text: actual(campo.$1))};
     _rfc.text = '${f['rfc'] ?? ''}';
     if (_rfcGenericos.contains(_rfc.text)) _rfc.text = '';
-    _razon.text = _rfc.text.isEmpty ? '' : '${f['razon_social'] ?? ''}';
+    _nombre.text = '${c['nombre'] ?? v['cliente'] ?? ''}';
+    // El nombre fiscal se ve mientras se escribe el RFC o el nombre.
+    _rfc.addListener(_refrescar);
+    _nombre.addListener(_refrescar);
     for (final cat in _catalogos) {
       final id = f[cat.$1];
       _elegido[cat.$1] = id is int ? id : null;
@@ -107,13 +109,17 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
     });
   }
 
+  void _refrescar() {
+    if (mounted) setState(() {});
+  }
+
   List<Map> _lista(String clave) => ((_fiscalCatalogos[clave] as List?) ?? const []).whereType<Map>().toList();
 
   bool get _esMexico => _pais != null && _pais == _direccion['mexico'];
 
   @override
   void dispose() {
-    for (final c in [_nombre, _rfc, _razon, ..._control.values]) {
+    for (final c in [_nombre, _rfc, ..._control.values]) {
       c.dispose();
     }
     super.dispose();
@@ -129,7 +135,7 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
     return {
       if (rfc.isNotEmpty) ...{
         'rfc': rfc,
-        'razon_social': _razon.text.trim().toUpperCase(),
+        'razon_social': _nombre.text.trim().toUpperCase(),
         'cp': _control['cp']!.text.trim(),
         'correo': _control['correo']!.text.trim(),
       },
@@ -140,11 +146,12 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
 
   Future<void> _guardar() async {
     final datos = <String, Object?>{for (final e in _control.entries) e.key: e.value.text.trim()};
+    datos['nombre'] = _nombre.text.trim();
     if (_pais != null) datos['pais'] = _pais;
     datos['estado'] = _esMexico ? (_estado ?? false) : false;
     final cp = datos['cp'] as String;
     final correo = datos['correo'] as String;
-    if (_nuevo && _nombre.text.trim().length < 3) {
+    if (_nombre.text.trim().length < 3) {
       avisar(context, 'Escriba el nombre del cliente.', error: true);
       return;
     }
@@ -161,10 +168,6 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
     if (rfc != null) {
       if (!_rfcValido.hasMatch(rfc) || _rfcGenericos.contains(rfc)) {
         avisar(context, 'El RFC no es válido: 12 caracteres (empresa) o 13 (persona física).', error: true);
-        return;
-      }
-      if ((fiscal['razon_social'] as String).isEmpty) {
-        avisar(context, 'Escriba la razón social como aparece en la constancia de situación fiscal.', error: true);
         return;
       }
       if (cp.isEmpty) {
@@ -190,7 +193,6 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
       if (_nuevo) {
         final uuid = await widget.motor.registrar('cliente_nuevo', {
           'jornada_id': widget.jornadaId,
-          'nombre': _nombre.text.trim(),
           ...datos,
           'fiscal': fiscal,
         });
@@ -206,7 +208,8 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
             if (igual(antes[e.key]) != igual(e.value)) e.key: e.value,
         };
         final fiscalAntes = _fiscalActual;
-        final fiscalCambio = fiscal.entries.any((e) => igual(fiscalAntes[e.key]) != igual(e.value));
+        final fiscalCambio = fiscal.entries
+            .any((e) => igual(fiscalAntes[e.key]).toUpperCase() != igual(e.value).toUpperCase());
         if (cambios.isNotEmpty || fiscalCambio) {
           await widget.motor.registrar('cliente', {
             'visita_id': widget.visita!['id'],
@@ -278,12 +281,8 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
               ),
             ),
             const SizedBox(height: 8),
-            _campoTexto(_nombre, 'Nombre del cliente *', mayusculas: TextCapitalization.words),
-          ] else
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text('${widget.visita!['cliente']}', style: tema.textTheme.titleMedium),
-            ),
+          ],
+          _campoTexto(_nombre, 'Nombre (si se factura, igual a la Constancia) *', mayusculas: TextCapitalization.words),
           for (final c in _campos) _campoTexto(_control[c.$1]!, c.$2, teclado: c.$3),
           if (_esMexico && estados.isNotEmpty)
             _desplegable('Estado', estados, _estado, (v) => setState(() => _estado = v)),
@@ -299,7 +298,14 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
             child: Text('Solo si el cliente pide factura. Sin RFC se le vende igual.', style: tema.textTheme.bodySmall),
           ),
           _campoTexto(_rfc, 'RFC', mayusculas: TextCapitalization.characters),
-          _campoTexto(_razon, 'Razón social (como en la constancia)', mayusculas: TextCapitalization.characters),
+          if (_rfc.text.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Nombre fiscal (se toma del nombre)', enabled: false),
+                child: Text(_nombre.text.trim().toUpperCase(), style: const TextStyle(color: Color(0xFF111111))),
+              ),
+            ),
           if (hayFiscales)
             for (final cat in _catalogos)
               if (_lista(cat.$1).isNotEmpty)

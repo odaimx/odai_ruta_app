@@ -44,8 +44,8 @@ void main() {
             'visitas': [
               {
                 'id': 10, 'cliente': 'Lupita', 'estado': 'pendiente', 'telefono': '3311112222',
-                'contacto': {'telefono': '3311112222', 'calle': 'Juárez 4', 'cp': '44100', 'estado': 14, 'pais': 156},
-                'fiscal': {'rfc': 'LUPA800101AB1', 'razon_social': 'LUPITA PEREZ', 'cp': '44100', 'regimen': 2, 'uso': 5},
+                'contacto': {'nombre': 'Lupita Pérez', 'telefono': '3311112222', 'calle': 'Juárez 4', 'cp': '44100', 'estado': 14, 'pais': 156},
+                'fiscal': {'rfc': 'LUPA800101AB1', 'razon_social': 'Lupita Pérez', 'cp': '44100', 'regimen': 2, 'uso': 5},
               },
             ],
           }
@@ -63,7 +63,8 @@ void main() {
     expect(find.text('Juárez 4'), findsOneWidget);
     expect(find.text('3311112222'), findsOneWidget);
     expect(find.text('LUPA800101AB1'), findsOneWidget);
-    expect(find.text('LUPITA PEREZ'), findsOneWidget);
+    expect(find.text('Lupita Pérez'), findsOneWidget);
+    expect(find.text('LUPITA PÉREZ'), findsOneWidget, reason: 'El nombre fiscal se toma del nombre');
     expect(find.text('612-Personas Físicas'), findsOneWidget);
     expect(find.text('G03-Gastos en general'), findsOneWidget);
     expect(find.text('Jalisco'), findsOneWidget);

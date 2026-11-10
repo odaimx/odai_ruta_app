@@ -120,6 +120,14 @@ ThemeData temaOdai(Brightness brillo) {
           borderRadius: BorderRadius.circular(radioMarco), borderSide: const BorderSide(color: azulMarino, width: 2)),
       labelStyle: const TextStyle(color: Color(0xFF333333)),
     ),
+    // Todos los botones rectangulares, con el mismo marco que el buscador.
+    filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco)))),
+    elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco)))),
+    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco)))),
+    iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco)))),
+    segmentedButtonTheme: SegmentedButtonThemeData(style: SegmentedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco)))),
+    chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco))),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radioMarco))),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: oscuro ? Colors.white : azulMarino,

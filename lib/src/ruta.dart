@@ -155,6 +155,7 @@ class Ruta {
     }
     v['contacto'] = contacto;
     v['fiscal'] = fiscal;
+    v['cliente'] = contacto['nombre'] ?? v['cliente'];
     v['comercial'] = contacto['comercial'] ?? v['comercial'];
     v['telefono'] = contacto['telefono'] ?? v['telefono'];
     v['direccion'] = direccionDe(contacto);
@@ -176,7 +177,7 @@ class Ruta {
             'telefono': a.datos['telefono'] ?? '',
             'direccion': direccionDe(a.datos),
             'contacto': {
-              for (final k in ['comercial', 'telefono', 'correo', 'calle', 'colonia', 'ciudad', 'cp']) k: a.datos[k] ?? '',
+              for (final k in ['nombre', 'comercial', 'telefono', 'correo', 'calle', 'colonia', 'ciudad', 'cp']) k: a.datos[k] ?? '',
               'estado': a.datos['estado'] ?? false,
               'pais': a.datos['pais'] ?? false,
             },
