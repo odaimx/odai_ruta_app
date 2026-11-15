@@ -144,7 +144,7 @@ class _MapaRutaState extends State<MapaRuta> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  if (abierta && pendiente && !ruta.llegada(v))
+                  if (abierta && pendiente && ruta.seguimiento(widget.jornadaId) && !ruta.llegada(v))
                     FilledButton.icon(
                       key: const ValueKey('mapa_llegue'),
                       icon: const Icon(Icons.where_to_vote),

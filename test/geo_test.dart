@@ -28,6 +28,7 @@ Future<Motor> _motor() async {
   motor.base = base;
   motor.cola = Cola(base);
   motor.ubicador = UbicadorFijo(19.4326, -99.1332);
+  motor.seguimiento = true;
   await base.escribirVarios({
     'jornadas': [
       {
@@ -36,6 +37,7 @@ Future<Motor> _motor() async {
           'moneda': {'symbol': r'$', 'position': 'before', 'decimals': 2},
           'mapa': {
             'teselas': {'url': 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 'atribucion': '© OpenStreetMap'},
+            'seguimiento': true,
             'punto_cada_s': 120,
             'punto_metros': 100,
             'aviso': '',
@@ -77,6 +79,21 @@ void main() {
     final ruta = await Ruta.cargar(motor);
     expect(ruta.llegada(ruta.visita(4, 20)!), isTrue);
     expect(ruta.llegada(ruta.visita(4, 21)!), isFalse);
+  });
+
+  test('sin el seguimiento GPS en Odoo no se manda ubicación', () async {
+    final motor = await _motor();
+    motor.seguimiento = false;
+    await motor.marcarVisita(20, 'llegada');
+    await motor.registrar('sin_venta', {'visita_id': 20, 'motivo_id': 1});
+    expect(await motor.fijarUbicacion(20), isFalse);
+    motor.iniciarRecorrido(4, cada: const Duration(minutes: 2));
+    expect(motor.grabandoRecorrido, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final tipos = (await motor.cola!.pendientes(limite: 100)).map((o) => o.tipo).toSet();
+    expect(tipos.intersection({'gps', 'ubicacion', 'puntos'}), isEmpty);
+    final ruta = await Ruta.cargar(motor);
+    expect(ruta.seguimiento(4), isTrue);
   });
 
   test('el orden del día en la cola manda en la lista', () async {

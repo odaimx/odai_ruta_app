@@ -295,7 +295,7 @@ class Motor extends ChangeNotifier {
       throw ApiError('datos', motivoNoVender!);
     }
     final visitaId = datos['visita_id'];
-    final marcaSalida = ubicador != null && tiposDeSalida.contains(tipo) && visitaId is int;
+    final marcaSalida = seguimiento && ubicador != null && tiposDeSalida.contains(tipo) && visitaId is int;
     if (visitaId is int && visitaId < 0) {
       // Cliente dado de alta sin señal: se liga a su alta, que Odoo procesa primero.
       final altas = (await cola!.pendientes(limite: 100000)).where((o) => o.tipo == 'cliente_nuevo');
@@ -319,12 +319,16 @@ class Motor extends ChangeNotifier {
   /// De dónde sale la ubicación del celular (en pruebas, una fija o ninguna).
   Ubicador? ubicador;
 
+  /// Odoo tiene el seguimiento GPS (módulo aparte) para la jornada en ruta. Sin él no se pide ubicación, no se marcan
+  /// llegadas ni salidas y no se guarda recorrido. Lo actualiza [revisarRecorrido].
+  bool seguimiento = false;
+
   final Set<int> _llegadas = {};
 
   /// Llegada o salida de una visita con su hora y la ubicación del celular. Sin permiso o sin GPS se manda sin
   /// coordenadas (Odoo la marca "sin ubicación"); nunca detiene al vendedor.
   Future<void> marcarVisita(int visitaId, String evento, {DateTime? momento}) async {
-    if (cola == null) return;
+    if (cola == null || !seguimiento) return;
     if (evento == 'llegada' && !_llegadas.add(visitaId)) return;
     final cuando = momento ?? reloj();
     final p = await ubicador?.actual();
@@ -345,6 +349,7 @@ class Motor extends ChangeNotifier {
 
   /// Fija la ubicación del cliente donde está parado el vendedor. Devuelve false si el celular no la dio.
   Future<bool> fijarUbicacion(int visitaId) async {
+    if (!seguimiento) return false;
     final p = await ubicador?.actual();
     if (p == null) return false;
     await registrar('ubicacion', {'visita_id': visitaId, 'lat': p.lat, 'lon': p.lon, 'precision': p.precision});
@@ -364,7 +369,7 @@ class Motor extends ChangeNotifier {
   void iniciarRecorrido(int jornadaId, {required Duration cada, int metros = 100}) {
     if (_recorrido != null && _recorridoJornada == jornadaId) return;
     detenerRecorrido();
-    if (cada <= Duration.zero || ubicador == null) return;
+    if (cada <= Duration.zero || ubicador == null || !seguimiento) return;
     _recorridoJornada = jornadaId;
     final revisar = cada < const Duration(seconds: 30) ? cada : const Duration(seconds: 30);
     _recorrido = Timer.periodic(revisar, (_) => tomarPunto(cada: cada, metros: metros));
@@ -412,8 +417,9 @@ class Motor extends ChangeNotifier {
     final ruta = await Ruta.cargar(this);
     final id = ruta.jornadaEnRuta();
     final mapa = id == null ? const {} : ruta.mapa(id);
+    seguimiento = id != null && ruta.seguimiento(id);
     final cada = (mapa['punto_cada_s'] as num?)?.toInt() ?? 0;
-    if (id == null || cada <= 0) {
+    if (id == null || cada <= 0 || !seguimiento) {
       if (_recorrido != null) detenerRecorrido();
       return;
     }

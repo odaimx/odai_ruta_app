@@ -55,6 +55,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
       return;
     }
     final ruta = await Ruta.cargar(motor);
+    if (!ruta.seguimiento(widget.jornadaId)) return;
     final aviso = '${ruta.mapa(widget.jornadaId)['aviso'] ?? ''}'.trim();
     final abierta = (ruta.jornada(widget.jornadaId)?['jornada'] as Map?)?['state'] == 'abierta';
     if (aviso.isEmpty || !abierta || !mounted) return;

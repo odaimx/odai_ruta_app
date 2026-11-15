@@ -139,6 +139,9 @@ class Ruta {
   /// Mapa de la jornada: fondo (teselas), tolerancia, recorrido y aviso de ubicación.
   Map mapa(int jornadaId) => (config(jornadaId)['mapa'] as Map?) ?? const {};
 
+  /// Odoo tiene el seguimiento GPS para la jornada (llegada y salida, fijar ubicación, recorrido y aviso).
+  bool seguimiento(int jornadaId) => mapa(jornadaId)['seguimiento'] == true;
+
   /// La jornada en ruta (abierta) del celular, si hay.
   int? jornadaEnRuta() {
     for (final j in jornadas) {

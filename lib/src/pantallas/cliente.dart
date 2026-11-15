@@ -91,13 +91,14 @@ class _PantallaClienteState extends State<PantallaCliente> {
             if (ruta.cobra(widget.jornadaId))
               Accion(Icons.payments, 'Cobrar',
                   () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
-            if (estado == 'pendiente' && !ruta.llegada(v))
+            if (ruta.seguimiento(widget.jornadaId) && estado == 'pendiente' && !ruta.llegada(v))
               Accion(Icons.where_to_vote, 'Llegué', () async {
                 await widget.motor.marcarVisita(widget.visitaId, 'llegada');
                 if (context.mounted) avisar(context, 'Llegada registrada.');
                 _cargar();
               }),
-            Accion(Icons.add_location_alt, 'Fijar ubicación aquí', _fijarUbicacion),
+            if (ruta.seguimiento(widget.jornadaId))
+              Accion(Icons.add_location_alt, 'Fijar ubicación aquí', _fijarUbicacion),
             if (estado == 'pendiente')
               Accion(Icons.block, 'Sin venta',
                   () => _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
