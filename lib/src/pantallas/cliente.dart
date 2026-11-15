@@ -4,6 +4,7 @@ import '../motor.dart';
 import '../ruta.dart';
 import 'cliente_datos.dart';
 import 'cobro.dart';
+import '../tema.dart';
 import 'comun.dart';
 import 'pedido.dart';
 import 'sin_venta.dart';
@@ -107,13 +108,36 @@ class _PantallaClienteState extends State<PantallaCliente> {
           if (pedidos.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text('Pedidos', style: tema.textTheme.titleSmall),
+            // Cada pedido en su marco: abierto queda resaltado (borde morado y fondo lavanda) con sus productos
+            // adentro, para no confundirlo con los demás.
             for (final p in pedidos)
-              ExpansionTile(
-                title: Text('${p['name']} · ${moneda(p['total'] as num? ?? 0)}'),
-                children: [
-                  for (final l in ((p['lineas'] as List?) ?? const []).whereType<Map>())
-                    ListTile(dense: true, title: Text('${l['producto']}'), trailing: Text('${l['cantidad']} ${l['uom']}')),
-                ],
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: ExpansionTile(
+                  key: ValueKey('pedido_${p['id']}'),
+                  shape: RoundedRectangleBorder(
+                      side: const BorderSide(color: moradoOdai, width: 2), borderRadius: BorderRadius.circular(12)),
+                  collapsedShape: RoundedRectangleBorder(
+                      side: const BorderSide(color: bordeMorado), borderRadius: BorderRadius.circular(12)),
+                  backgroundColor: lavanda,
+                  collapsedBackgroundColor: Colors.white,
+                  clipBehavior: Clip.antiAlias,
+                  title: Text('${p['name']} · ${moneda(p['total'] as num? ?? 0)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF111111))),
+                  childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  children: [
+                    for (final l in ((p['lineas'] as List?) ?? const []).whereType<Map>())
+                      Container(
+                        margin: const EdgeInsets.only(top: 4),
+                        decoration:
+                            BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
+                        child: ListTile(
+                            dense: true,
+                            title: Text('${l['producto']}'),
+                            trailing: Text('${l['cantidad']} ${l['uom']}')),
+                      ),
+                  ],
+                ),
               ),
           ],
         ],
