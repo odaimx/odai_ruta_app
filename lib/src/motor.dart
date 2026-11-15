@@ -305,6 +305,33 @@ class Motor extends ChangeNotifier {
     return (texto: '${f['texto']}'.trim(), autor: autor.isEmpty ? 'Anónimo' : autor);
   }
 
+  // ---------------------------------------------------------------- vigía de la señal
+
+  Timer? _vigia;
+
+  /// Revisa la señal sola, sin esperar a que el vendedor presione Sincronizar: sin señal (o con algo pendiente
+  /// por subir) lo intenta cada [cada]; con señal, sincroniza cuando el último contacto tiene más de [conSenalCada].
+  /// Así el indicador regresa a verde en cuanto vuelve la conexión y no cae en rojo mientras hay señal.
+  void vigilarSenal({Duration cada = const Duration(seconds: 15),
+      Duration conSenalCada = const Duration(seconds: 90)}) {
+    _vigia?.cancel();
+    _vigia = Timer.periodic(cada, (_) => revisarSenal(conSenalCada: conSenalCada));
+  }
+
+  /// Una revisión del vigía (pública para las pruebas).
+  Future<void> revisarSenal({Duration conSenalCada = const Duration(seconds: 90)}) async {
+    if (api == null || base == null || _enCurso != null || !emparejado) return;
+    final u = _ultimaConexion;
+    final toca = u == null || pendientes > 0 || reloj().difference(u) >= conSenalCada;
+    if (toca) await sincronizar();
+  }
+
+  @override
+  void dispose() {
+    _vigia?.cancel();
+    super.dispose();
+  }
+
   // ---------------------------------------------------------------- sincronización
 
   /// Latido, subir la cola y bajar lo que cambió. Sin señal no hace nada malo: todo queda para después.

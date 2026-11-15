@@ -193,6 +193,22 @@ void main() {
     expect(await motor.desbloquear('4821'), isTrue);
   });
 
+  test('la señal vuelve a verde sola cuando regresa la conexión', () async {
+    final motor = nuevoMotor();
+    await motor.iniciar();
+    await motor.emparejar(qr);
+    await motor.sincronizar();
+    expect(motor.conSenal, isTrue);
+    odoo.conSenal = false;
+    await motor.sincronizar();
+    expect(motor.conSenal, isFalse);
+    await motor.revisarSenal();
+    expect(motor.conSenal, isFalse, reason: 'Sigue sin señal');
+    odoo.conSenal = true;
+    await motor.revisarSenal();
+    expect(motor.conSenal, isTrue, reason: 'Sin presionar Sincronizar');
+  });
+
   test('sin señal la cola guarda, y al volver sube sin duplicar', () async {
     final motor = nuevoMotor();
     await motor.iniciar();

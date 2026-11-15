@@ -19,7 +19,11 @@ void main() {
     permitirHttp: kDebugMode,
   );
   runApp(OdaiRutaApp(motor: motor));
-  motor.iniciar().then((_) => motor.sincronizar());
+  motor.iniciar().then((_) {
+    motor.sincronizar();
+    // La señal se revisa sola: el indicador regresa a verde sin presionar Sincronizar.
+    motor.vigilarSenal();
+  });
 }
 
 class OdaiRutaApp extends StatefulWidget {
