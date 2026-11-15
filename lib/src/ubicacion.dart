@@ -5,15 +5,15 @@ import 'package:geolocator/geolocator.dart';
 
 /// Una posición del celular.
 class Posicion {
-  const Posicion(this.lat, this.lon, {this.precision = 0, this.velocidad = 0, DateTime? momento}) : _momento = momento;
+  const Posicion(this.lat, this.lon, {this.precision = 0, this.velocidad = 0, this.capturada});
 
   final double lat;
   final double lon;
   final double precision;
   final double velocidad;
-  final DateTime? _momento;
+  final DateTime? capturada;
 
-  DateTime get momento => _momento ?? DateTime.now();
+  DateTime get momento => capturada ?? DateTime.now();
 
   Map<String, Object?> paraOdoo() => {
     'lat': lat,
@@ -70,7 +70,7 @@ class UbicadorGps implements Ubicador {
       try {
         final p = await Geolocator.getLastKnownPosition();
         if (p == null || DateTime.now().difference(p.timestamp) > const Duration(minutes: 5)) return null;
-        return Posicion(p.latitude, p.longitude, precision: p.accuracy, momento: p.timestamp);
+        return Posicion(p.latitude, p.longitude, precision: p.accuracy, capturada: p.timestamp);
       } catch (_) {
         return null;
       }
