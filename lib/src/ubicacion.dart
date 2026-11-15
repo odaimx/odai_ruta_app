@@ -61,7 +61,7 @@ class UbicadorGps implements Ubicador {
         p.longitude,
         precision: p.accuracy,
         velocidad: p.speed < 0 ? 0 : p.speed,
-        momento: DateTime.now(),
+        capturada: DateTime.now(),
       );
     } catch (_) {
       // Sin fijación a tiempo: la última conocida si es reciente (menos de 5 minutos).
