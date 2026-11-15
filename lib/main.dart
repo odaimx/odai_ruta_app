@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'src/almacen.dart';
 import 'src/base_local.dart';
 import 'src/motor.dart';
+import 'src/pantallas/actualizar_obligatoria.dart';
 import 'src/pantallas/emparejar.dart';
 import 'src/pantallas/inicio.dart';
 import 'src/pantallas/pin.dart';
@@ -82,6 +83,8 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
           if (!motor.emparejado) return PantallaEmparejar(motor: motor);
           if (!motor.desbloqueado) return PantallaPin(motor: motor);
           if (motor.pinTemporal) return PantallaNuevoPin(motor: motor, obligatorio: true);
+          // Versión obligatoria: no se trabaja hasta actualizar (lo pendiente se envía antes).
+          if (motor.debeActualizar) return PantallaActualizarObligatoria(motor: motor);
           return PantallaInicio(motor: motor);
         },
       ),
