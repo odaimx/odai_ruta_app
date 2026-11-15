@@ -145,6 +145,15 @@ class Ruta {
         (o.datos['visita_id'] == visitaId || (uuidAlta != null && o.datos['visita_uuid'] == uuidAlta)));
   }
 
+  /// Devolución de [pedidoId] que espera en la cola (para no capturarla dos veces).
+  Operacion? devolucionEnCola(int visitaId, int pedidoId) => _pendientesDe(visitaId)
+      .where((o) => o.tipo == 'devolucion' && o.datos['pedido_id'] == pedidoId)
+      .firstOrNull;
+
+  /// Motivos de devolución que bajaron con la jornada.
+  List<Map> motivosDevolucion(int jornadaId) =>
+      ((jornada(jornadaId)?['motivos_devolucion'] as List?) ?? const []).whereType<Map>().toList();
+
   /// La visita con los datos de contacto que esperan en la cola ya aplicados.
   Map _conContacto(Map visita) {
     final cambios = _pendientesDe(visita['id'] as int).where((o) => o.tipo == 'cliente').toList();
@@ -266,8 +275,12 @@ class Ruta {
     final enCola = _pendientes.where((o) => ids.contains(o.datos['visita_id']));
     final estados = todas.map(estado).toList();
     return Tablero(
+      // Una devolución que se aplica sola resta de lo vendido desde que se captura.
       vendido: _num(datos['monto']) +
-          enCola.where((o) => o.tipo == 'pedido').fold(0.0, (s, o) => s + _num(o.datos['total'])),
+          enCola.where((o) => o.tipo == 'pedido').fold(0.0, (s, o) => s + _num(o.datos['total'])) -
+          enCola
+              .where((o) => o.tipo == 'devolucion' && o.datos['oficina'] != true)
+              .fold(0.0, (s, o) => s + _num(o.datos['monto'])),
       cobrado: _num(datos['cobrado']) +
           enCola.where((o) => o.tipo == 'cobro' || o.tipo == 'anticipo').fold(0.0, (s, o) => s + _num(o.datos['monto'])),
       visitas: todas.length,

@@ -4,6 +4,7 @@ import '../motor.dart';
 import '../ruta.dart';
 import 'cliente_datos.dart';
 import 'cobro.dart';
+import 'devolucion.dart';
 import '../tema.dart';
 import 'comun.dart';
 import 'pedido.dart';
@@ -135,6 +136,17 @@ class _PantallaClienteState extends State<PantallaCliente> {
                             dense: true,
                             title: Text('${l['producto']}'),
                             trailing: Text('${l['cantidad']} ${l['uom']}')),
+                      ),
+                    if (abierta && p['state'] == 'sale')
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          key: ValueKey('devolver_${p['id']}'),
+                          icon: const Icon(Icons.assignment_return),
+                          label: const Text('Devolver'),
+                          onPressed: () => _ir(PantallaDevolucion(
+                              motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId, pedido: p)),
+                        ),
                       ),
                   ],
                 ),
