@@ -233,6 +233,7 @@ class _Tablero extends StatelessWidget {
     );
 
     final efectividad = hoy.hechas == 0 ? 0 : (100 * hoy.conPedido / hoy.hechas).round();
+    final reparto = ruta.esReparto(jornadaId);
     final visitas = tarjeta(
       key: const ValueKey('tablero_visitas'),
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -246,8 +247,8 @@ class _Tablero extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        dato('Con pedido', '${hoy.conPedido}', color: verdeOdai),
-        dato('Sin venta', '${hoy.sinVenta}', color: const Color(0xFFE53935)),
+        dato(reparto ? 'Entregados' : 'Con pedido', '${hoy.conPedido}', color: verdeOdai),
+        dato(reparto ? 'No entregados' : 'Sin venta', '${hoy.sinVenta}', color: const Color(0xFFE53935)),
         dato('Efectividad', '$efectividad%'),
       ]),
     );

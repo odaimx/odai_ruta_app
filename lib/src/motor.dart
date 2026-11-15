@@ -21,7 +21,7 @@ const _claveEstado = 'estado';
 const partesBajada = ['jornadas', 'catalogo', 'listas', 'iva', 'visita_lista', 'facturas', 'motivos', 'frases', 'marcas'];
 
 /// Tipos que venden o cobran: necesitan permiso vigente para trabajar sin señal.
-const tiposDeVenta = {'pedido', 'anticipo', 'cobro'};
+const tiposDeVenta = {'pedido', 'anticipo', 'cobro', 'entrega'};
 
 const maxIntentosPin = 5;
 

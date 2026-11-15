@@ -199,6 +199,14 @@ class Ruta {
   String estado(Map visita) {
     final id = visita['id'] as int;
     final ops = _pendientesDe(id).toList();
+    final entrega = ops.where((o) => o.tipo == 'entrega').firstOrNull;
+    if (entrega != null) {
+      return switch (entrega.datos['resultado']) {
+        'completa' => 'entregado',
+        'parcial' => 'parcial',
+        _ => 'no_entregado',
+      };
+    }
     if (ops.any((o) => o.tipo == 'pedido')) return 'pedido';
     if (ops.any((o) => o.tipo == 'sin_venta')) return 'sin_venta';
     return (visita['estado'] as String?) ?? 'pendiente';
@@ -264,8 +272,8 @@ class Ruta {
           enCola.where((o) => o.tipo == 'cobro' || o.tipo == 'anticipo').fold(0.0, (s, o) => s + _num(o.datos['monto'])),
       visitas: todas.length,
       hechas: estados.where((e) => e != 'pendiente').length,
-      conPedido: estados.where((e) => e == 'pedido').length,
-      sinVenta: estados.where((e) => e == 'sin_venta').length,
+      conPedido: estados.where((e) => e == 'pedido' || e == 'entregado' || e == 'parcial').length,
+      sinVenta: estados.where((e) => e == 'sin_venta' || e == 'no_entregado').length,
     );
   }
 
@@ -284,6 +292,49 @@ class Ruta {
       if (usa('regimen') && fiscal['regimen'] is! int) 'régimen fiscal',
       if (usa('uso') && fiscal['uso'] is! int) 'uso del CFDI',
     ];
+  }
+
+  /// Ruta de reparto: el chofer entrega los pedidos de la ruta y cobra los de contado; no levanta pedidos.
+  bool esReparto(int jornadaId) => config(jornadaId)['tipo_ruta'] == 'reparto';
+
+  /// Entregas (pedidos con sus productos) que lleva el chofer a la visita.
+  List<Map> entregas(Map visita) => ((visita['entregas'] as List?) ?? const []).whereType<Map>().toList();
+
+  /// Valor (con impuestos) de lo que se entrega de un pedido con las cantidades indicadas por ``move_id``.
+  static double valorEntregado(Map entrega, Map<int, double> cantidades) =>
+      ((entrega['lineas'] as List?) ?? const []).whereType<Map>().fold(
+          0.0, (s, l) => s + _num(l['precio']) * (cantidades[l['move_id']] ?? _num(l['cantidad'])));
+
+  /// Lo que falta por cobrar al entregar un pedido de contado, contando lo que espera en la cola: una entrega en
+  /// parte cobra solo lo entregado y un cobro capturado ya se descuenta.
+  double porCobrarEntrega(int visitaId, Map entrega) {
+    if (entrega['contado'] != true) return 0;
+    final ops = _pendientesDe(visitaId).toList();
+    final facturas = ((entrega['facturas'] as List?) ?? const []).toSet();
+    var falta = _num(entrega['por_cobrar']);
+    final op = ops.where((o) => o.tipo == 'entrega').firstOrNull;
+    if (op != null) {
+      if (op.datos['resultado'] == 'no') return 0;
+      if (op.datos['resultado'] == 'parcial' && facturas.isEmpty) {
+        final cantidades = <int, double>{
+          for (final l in ((op.datos['lineas'] as List?) ?? const []).whereType<Map>())
+            l['move_id'] as int: _num(l['cantidad'])
+        };
+        for (final l in ((entrega['lineas'] as List?) ?? const []).whereType<Map>()) {
+          cantidades.putIfAbsent(l['move_id'] as int, () => 0);
+        }
+        final pagado = _num(entrega['total']) - _num(entrega['por_cobrar']);
+        falta = math.max(0, valorEntregado(entrega, cantidades) - pagado);
+      }
+    }
+    for (final o in ops) {
+      final esDelPedido = (o.tipo == 'anticipo' && o.datos['pedido_id'] == entrega['pedido_id']) ||
+          (o.tipo == 'cobro' &&
+              facturas.isNotEmpty &&
+              ((o.datos['factura_ids'] as List?) ?? const []).any(facturas.contains));
+      if (esDelPedido) falta -= _num(o.datos['monto']);
+    }
+    return math.max(0, falta);
   }
 
   /// Datos de las tarjetas del inicio que manda Odoo: meta de la ruta y las últimas jornadas.

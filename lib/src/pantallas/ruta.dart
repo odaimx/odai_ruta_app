@@ -5,6 +5,7 @@ import '../ruta.dart';
 import 'cliente.dart';
 import '../tema.dart';
 import 'cliente_datos.dart';
+import 'entrega.dart';
 import 'comun.dart';
 import 'pedido.dart';
 
@@ -47,7 +48,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
     await Navigator.push(
         context,
         MaterialPageRoute(
-            builder: (_) => abierta
+            builder: (_) => _ruta?.esReparto(widget.jornadaId) == true
+                ? PantallaEntrega(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)
+                : abierta
                 ? PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)
                 : PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)));
     _cargar();
@@ -82,17 +85,23 @@ class _PantallaRutaState extends State<PantallaRuta> {
   Future<void> _cerrar() async {
     final ruta = _ruta!;
     final pendientes = ruta.visitas(widget.jornadaId).where((v) => ruta.estado(v) == 'pendiente').length;
+    final reparto = ruta.esReparto(widget.jornadaId);
     if (pendientes > 0 && ruta.config(widget.jornadaId)['cerrar_pendientes'] != true) {
-      avisar(context, 'Faltan $pendientes clientes. Levante el pedido o indique el motivo de no venta.', error: true);
+      avisar(
+          context,
+          reparto
+              ? 'Faltan $pendientes clientes. Registre la entrega o márquela como no entregada.'
+              : 'Faltan $pendientes clientes. Levante el pedido o indique el motivo de no venta.',
+          error: true);
       return;
     }
     final ok = await confirmar(
         context,
         'Cerrar jornada',
         pendientes > 0
-            ? 'Quedan $pendientes clientes sin visitar; se marcarán como no visitados. Después ya no podrá vender '
-                'en esta jornada.'
-            : 'Después ya no podrá vender en esta jornada.',
+            ? 'Quedan $pendientes clientes sin visitar; se marcarán como no visitados. Después ya no podrá '
+                '${reparto ? 'entregar' : 'vender'} en esta jornada.'
+            : 'Después ya no podrá ${reparto ? 'entregar' : 'vender'} en esta jornada.',
         si: 'Cerrar');
     if (!ok || !mounted) return;
     try {
@@ -128,6 +137,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
     final aviso = datos['licencia_aviso'] as String?;
     final abierta = jornada['state'] == 'abierta';
     final pendientesN = todas.where((v) => ruta.estado(v) == 'pendiente').length;
+    final reparto = ruta.esReparto(widget.jornadaId);
     return Scaffold(
       appBar: CabeceraOdai(
           titulo: widget.motor.nombreVendedor.isEmpty ? '${jornada['ruta']}' : widget.motor.nombreVendedor,
@@ -136,7 +146,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
       body: Column(
         children: [
           BarraAcciones(motor: widget.motor, acciones: [
-            if (abierta) Accion(Icons.person_add, 'Nuevo cliente', _clienteNuevo, principal: true),
+            if (abierta && !reparto) Accion(Icons.person_add, 'Nuevo cliente', _clienteNuevo, principal: true),
             Accion(Icons.sync, widget.motor.sincronizando ? 'Sincronizando...' : 'Sincronizar',
                 widget.motor.sincronizando ? null : () => widget.motor.sincronizar()),
             if (abierta) Accion(Icons.flag, 'Cerrar jornada', _cerrar),
@@ -187,6 +197,11 @@ class _PantallaRutaState extends State<PantallaRuta> {
                         if (comercial.isNotEmpty)
                           Text('${v['cliente']}', style: const TextStyle(fontSize: 16, color: Color(0xFF222222))),
                         if (porCobrar > 0) Text('Debe ${moneda(porCobrar)}', style: chico),
+                        if (reparto)
+                          Text(
+                              '${ruta.entregas(v).length == 1 ? '1 pedido' : '${ruta.entregas(v).length} pedidos'}'
+                              ' · ${moneda(ruta.entregas(v).fold(0.0, (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0)))}',
+                              style: chico),
                       ]),
                     ),
                     Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -204,7 +219,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
                             ? Icons.keyboard_double_arrow_right
                             : estado == 'pedido'
                                 ? Icons.shopping_cart
-                                : Icons.block,
+                                : estado == 'entregado' || estado == 'parcial'
+                                    ? Icons.local_shipping
+                                    : Icons.block,
                         size: 30,
                         color: estado == 'pendiente' ? const Color(0xFF111111) : moradoOscuro),
                   ]),

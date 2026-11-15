@@ -61,6 +61,9 @@ const etiquetasEstado = {
   'pedido': 'Con pedido',
   'sin_venta': 'Sin venta',
   'no_visitado': 'No visitado',
+  'entregado': 'Entregado',
+  'parcial': 'Entregado en parte',
+  'no_entregado': 'No entregado',
 };
 
 
