@@ -163,7 +163,7 @@ class _PantallaPinState extends State<PantallaPin> {
             key: const ValueKey('frase_siguiente'),
             tooltip: 'Otra frase',
             onPressed: _siguienteFrase,
-            icon: const Icon(Icons.arrow_forward, color: moradoOdai),
+            icon: const Icon(Icons.keyboard_double_arrow_right, size: 30, color: Color(0xFF111111)),
           ),
           Expanded(
             child: Text(f.autor,
