@@ -400,10 +400,13 @@ class _PantallaPedidoState extends State<PantallaPedido> {
                 ),
                 TextField(controller: _nota, decoration: const InputDecoration(labelText: 'Nota'), maxLines: 2),
                 const SizedBox(height: 12),
-                BotonGrande(
-                  icono: Icons.send,
-                  texto: 'Enviar ${moneda(total)}',
+                FilledButton.icon(
+                  key: const ValueKey('enviar_pedido'),
                   onPressed: _lineas.isEmpty ? null : () => Navigator.pop(c, true),
+                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(62)),
+                  icon: const Icon(Icons.send, size: 28),
+                  label: Text('Enviar ${moneda(total)}',
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                 ),
               ]),
             ),

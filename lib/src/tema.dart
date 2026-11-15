@@ -12,6 +12,8 @@ const lavanda = Color(0xFFE3DAF5);
 /// Fondo de las pantallas.
 const fondoOdai = Color(0xFFF7F5FA);
 const azulOdai = Color(0xFF2F8FE0);
+/// El azul del triángulo del logo de ODAI.
+const azulLogo = Color(0xFF4DA6F2);
 const verdeOdai = Color(0xFF43A047);
 /// Compatibilidad: algunos marcos usan el gris oscuro.
 const bordeOdai = Color(0xFF616161);

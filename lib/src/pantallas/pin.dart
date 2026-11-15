@@ -90,6 +90,18 @@ class _PantallaPinState extends State<PantallaPin> {
     if (mounted && f != null && _frase == null) setState(() => _frase = f);
   }
 
+  /// Otra frase, distinta de la que se ve (si hay más de una).
+  Future<void> _siguienteFrase() async {
+    for (var intento = 0; intento < 5; intento++) {
+      final f = await widget.motor.fraseAlAzar();
+      if (f == null) return;
+      if (f.texto != _frase?.texto || intento == 4) {
+        if (mounted) setState(() => _frase = f);
+        return;
+      }
+    }
+  }
+
   Widget _teclado(ThemeData tema) {
     Widget tecla(String t) {
       final Widget contenido = switch (t) {
@@ -146,10 +158,20 @@ class _PantallaPinState extends State<PantallaPin> {
             textAlign: TextAlign.center,
             style: tema.textTheme.titleMedium?.copyWith(fontStyle: FontStyle.italic, color: const Color(0xFF222222))),
         const SizedBox(height: 4),
-        Text(f.autor,
-            key: const ValueKey('frase_autor'),
-            textAlign: TextAlign.right,
-            style: tema.textTheme.bodyMedium?.copyWith(color: moradoOscuro, fontWeight: FontWeight.w600)),
+        Row(children: [
+          IconButton(
+            key: const ValueKey('frase_siguiente'),
+            tooltip: 'Otra frase',
+            onPressed: _siguienteFrase,
+            icon: const Icon(Icons.autorenew, color: moradoOdai),
+          ),
+          Expanded(
+            child: Text(f.autor,
+                key: const ValueKey('frase_autor'),
+                textAlign: TextAlign.right,
+                style: tema.textTheme.bodyMedium?.copyWith(color: moradoOscuro, fontWeight: FontWeight.w600)),
+          ),
+        ]),
       ]),
     );
   }
@@ -175,7 +197,9 @@ class _PantallaPinState extends State<PantallaPin> {
                   const SizedBox(height: 20),
                   Image.asset('assets/logo.png', height: 60),
                   const SizedBox(height: 6),
-                  Text('Venta en Ruta', style: tema.textTheme.headlineSmall?.copyWith(color: const Color(0xFF222222))),
+                  Text('VENTA EN RUTA',
+                      style: tema.textTheme.headlineSmall
+                          ?.copyWith(color: azulLogo, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
                   const SizedBox(height: 14),
                   _fraseCelebre(tema),
                   const Spacer(),
