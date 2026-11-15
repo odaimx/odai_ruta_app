@@ -5,6 +5,7 @@ import '../ruta.dart';
 import 'cliente_datos.dart';
 import 'cobro.dart';
 import 'devolucion.dart';
+import 'mapa_ruta.dart';
 import '../tema.dart';
 import 'comun.dart';
 import 'pedido.dart';
@@ -41,6 +42,25 @@ class _PantallaClienteState extends State<PantallaCliente> {
     _cargar();
   }
 
+  /// Guarda la ubicación del cliente donde está el vendedor (si ya tenía una lejos, la aprueba el supervisor).
+  Future<void> _fijarUbicacion() async {
+    final ok = await confirmar(context, 'Fijar ubicación',
+        '¿Está en el negocio del cliente? Se guarda la ubicación del celular como la del cliente.', si: 'Fijar');
+    if (!ok || !mounted) return;
+    try {
+      final hecho = await widget.motor.fijarUbicacion(widget.visitaId);
+      if (!mounted) return;
+      avisar(
+          context,
+          hecho
+              ? 'Ubicación guardada. Si el cliente ya tenía otra lejos, la revisa el supervisor.'
+              : 'No se pudo leer la ubicación. Revise el GPS y el permiso de ubicación.',
+          error: !hecho);
+    } catch (e) {
+      if (mounted) avisar(context, textoError(e), error: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ruta = _ruta;
@@ -68,12 +88,21 @@ class _PantallaClienteState extends State<PantallaCliente> {
             Accion(Icons.add_shopping_cart, 'Levantar pedido',
                 () => _ir(PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
                 principal: true),
-            Accion(Icons.payments, 'Cobrar',
-                () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+            if (ruta.cobra(widget.jornadaId))
+              Accion(Icons.payments, 'Cobrar',
+                  () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+            if (estado == 'pendiente' && !ruta.llegada(v))
+              Accion(Icons.where_to_vote, 'Llegué', () async {
+                await widget.motor.marcarVisita(widget.visitaId, 'llegada');
+                if (context.mounted) avisar(context, 'Llegada registrada.');
+                _cargar();
+              }),
+            Accion(Icons.add_location_alt, 'Fijar ubicación aquí', _fijarUbicacion),
             if (estado == 'pendiente')
               Accion(Icons.block, 'Sin venta',
                   () => _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
           ],
+          if (puntoDe(v) != null) Accion(Icons.directions, 'Cómo llegar', () => comoLlegar(context, puntoDe(v)!)),
           Accion(Icons.edit, 'Modificar cliente',
               () => _ir(PantallaDatosCliente(motor: widget.motor, jornadaId: widget.jornadaId, visita: v))),
         ]),

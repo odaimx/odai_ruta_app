@@ -12,13 +12,27 @@ import 'api.dart';
 import 'base_local.dart';
 import 'pin.dart';
 import 'ruta.dart';
+import 'ubicacion.dart';
 import 'version.dart';
 
 /// Lo que se guarda en la base local sobre el estado del celular (clave `estado`).
 const _claveEstado = 'estado';
 
 /// Partes de la bajada que se guardan tal cual. `null` en la respuesta significa "sin cambios".
-const partesBajada = ['jornadas', 'catalogo', 'listas', 'iva', 'visita_lista', 'facturas', 'motivos', 'frases', 'marcas'];
+const partesBajada = [
+  'jornadas',
+  'catalogo',
+  'listas',
+  'iva',
+  'visita_lista',
+  'facturas',
+  'motivos',
+  'frases',
+  'marcas',
+];
+
+/// Lo que cierra la atención a un cliente: al guardarlo se marca la salida de la visita con hora y GPS.
+const tiposDeSalida = {'pedido', 'sin_venta', 'cobro', 'anticipo', 'entrega', 'devolucion'};
 
 /// Tipos que venden o cobran: necesitan permiso vigente para trabajar sin señal.
 const tiposDeVenta = {'pedido', 'anticipo', 'cobro', 'entrega', 'devolucion'};
@@ -88,6 +102,7 @@ class Motor extends ChangeNotifier {
   String get nivelLicencia => ((_estado['licencia'] as Map?)?['nivel'] as String?) ?? 'ok';
   String get mensajeLicencia => ((_estado['licencia'] as Map?)?['mensaje'] as String?) ?? '';
   String get versionMinima => (_estado['version_minima'] as String?) ?? '1.0.0';
+
   /// Versión nueva que subió el supervisor en Odoo: `{id, version, notas, obligatoria}`, o null.
   Map? get actualizacion {
     final a = _estado['actualizacion'];
@@ -280,6 +295,7 @@ class Motor extends ChangeNotifier {
       throw ApiError('datos', motivoNoVender!);
     }
     final visitaId = datos['visita_id'];
+    final marcaSalida = ubicador != null && tiposDeSalida.contains(tipo) && visitaId is int;
     if (visitaId is int && visitaId < 0) {
       // Cliente dado de alta sin señal: se liga a su alta, que Odoo procesa primero.
       final altas = (await cola!.pendientes(limite: 100000)).where((o) => o.tipo == 'cliente_nuevo');
@@ -290,15 +306,134 @@ class Motor extends ChangeNotifier {
     final uuid = await cola!.agregar(tipo, datos);
     pendientes = await cola!.contarPendientes();
     notifyListeners();
-    unawaited(sincronizar());
+    if (marcaSalida) {
+      unawaited(marcarVisita(visitaId, 'salida'));
+    } else {
+      unawaited(sincronizar());
+    }
     return uuid;
+  }
+
+  // ---------------------------------------------------------------- ubicación
+
+  /// De dónde sale la ubicación del celular (en pruebas, una fija o ninguna).
+  Ubicador? ubicador;
+
+  final Set<int> _llegadas = {};
+
+  /// Llegada o salida de una visita con su hora y la ubicación del celular. Sin permiso o sin GPS se manda sin
+  /// coordenadas (Odoo la marca "sin ubicación"); nunca detiene al vendedor.
+  Future<void> marcarVisita(int visitaId, String evento, {DateTime? momento}) async {
+    if (cola == null) return;
+    if (evento == 'llegada' && !_llegadas.add(visitaId)) return;
+    final cuando = momento ?? reloj();
+    final p = await ubicador?.actual();
+    try {
+      await registrar('gps', {
+        'visita_id': visitaId,
+        'evento': evento,
+        'momento': cuando.toUtc().toIso8601String(),
+        if (p != null) ...{'lat': p.lat, 'lon': p.lon, 'precision': p.precision},
+      });
+    } catch (_) {
+      // Un cliente nuevo que ya no está en el celular, por ejemplo: la ubicación no es crítica.
+    }
+  }
+
+  /// La llegada ya se mandó (en esta sesión, en la cola o ya en Odoo).
+  bool llegadaMarcada(int visitaId) => _llegadas.contains(visitaId);
+
+  /// Fija la ubicación del cliente donde está parado el vendedor. Devuelve false si el celular no la dio.
+  Future<bool> fijarUbicacion(int visitaId) async {
+    final p = await ubicador?.actual();
+    if (p == null) return false;
+    await registrar('ubicacion', {'visita_id': visitaId, 'lat': p.lat, 'lon': p.lon, 'precision': p.precision});
+    return true;
+  }
+
+  // ---------------------------------------------------------------- recorrido
+
+  Timer? _recorrido;
+  int? _recorridoJornada;
+  final List<Posicion> _puntos = [];
+  Posicion? _ultimoPunto;
+  DateTime? _puntosDesde;
+
+  /// Con la app abierta y la jornada en ruta, guarda un punto cada [cada] o al moverse [metros]; los manda en
+  /// grupos a Odoo con la cola. Se detiene sola al cerrar la jornada o al salir de la app.
+  void iniciarRecorrido(int jornadaId, {required Duration cada, int metros = 100}) {
+    if (_recorrido != null && _recorridoJornada == jornadaId) return;
+    detenerRecorrido();
+    if (cada <= Duration.zero || ubicador == null) return;
+    _recorridoJornada = jornadaId;
+    final revisar = cada < const Duration(seconds: 30) ? cada : const Duration(seconds: 30);
+    _recorrido = Timer.periodic(revisar, (_) => tomarPunto(cada: cada, metros: metros));
+    unawaited(tomarPunto(cada: cada, metros: metros));
+  }
+
+  /// Un punto del recorrido (pública para las pruebas).
+  Future<void> tomarPunto({required Duration cada, int metros = 100}) async {
+    final p = await ubicador?.actual();
+    if (p == null || _recorridoJornada == null) return;
+    final u = _ultimoPunto;
+    final toca =
+        u == null || p.momento.difference(u.momento) >= cada || distanciaM(u.lat, u.lon, p.lat, p.lon) >= metros;
+    if (!toca) return;
+    _ultimoPunto = p;
+    _puntos.add(p);
+    _puntosDesde ??= reloj();
+    if (_puntos.length >= 10 || reloj().difference(_puntosDesde!) >= const Duration(minutes: 5)) {
+      await enviarPuntos();
+    }
+  }
+
+  /// Manda a la cola los puntos guardados en memoria.
+  Future<void> enviarPuntos() async {
+    final jornada = _recorridoJornada;
+    if (_puntos.isEmpty || jornada == null || cola == null) return;
+    final lote = [for (final p in _puntos) p.paraOdoo()];
+    _puntos.clear();
+    _puntosDesde = null;
+    await registrar('puntos', {'jornada_id': jornada, 'puntos': lote});
+  }
+
+  void detenerRecorrido() {
+    _recorrido?.cancel();
+    _recorrido = null;
+    unawaited(enviarPuntos().catchError((_) {}));
+    _recorridoJornada = null;
+  }
+
+  bool get grabandoRecorrido => _recorrido != null;
+
+  /// Arranca o detiene el recorrido según la jornada en ruta que bajó de Odoo.
+  Future<void> revisarRecorrido() async {
+    if (base == null || !desbloqueado) return;
+    final ruta = await Ruta.cargar(this);
+    final id = ruta.jornadaEnRuta();
+    final mapa = id == null ? const {} : ruta.mapa(id);
+    final cada = (mapa['punto_cada_s'] as num?)?.toInt() ?? 0;
+    if (id == null || cada <= 0) {
+      if (_recorrido != null) detenerRecorrido();
+      return;
+    }
+    iniciarRecorrido(
+      id,
+      cada: Duration(seconds: cada),
+      metros: (mapa['punto_metros'] as num?)?.toInt() ?? 100,
+    );
   }
 
   Future<Object?> dato(String clave) async => base?.leer(clave);
 
   /// Una frase célebre o refrán al azar para la pantalla del PIN (bajan de Odoo y se ven sin señal).
   Future<({String texto, String autor})?> fraseAlAzar([math.Random? azar]) async {
-    final frases = ((await dato('frases')) as List?)?.whereType<Map>().where((f) => '${f['texto'] ?? ''}'.trim().isNotEmpty).toList() ?? const [];
+    final frases =
+        ((await dato('frases')) as List?)
+            ?.whereType<Map>()
+            .where((f) => '${f['texto'] ?? ''}'.trim().isNotEmpty)
+            .toList() ??
+        const [];
     if (frases.isEmpty) return null;
     final f = frases[(azar ?? math.Random()).nextInt(frases.length)];
     final autor = '${f['autor'] ?? ''}'.trim();
@@ -312,8 +447,10 @@ class Motor extends ChangeNotifier {
   /// Revisa la señal sola, sin esperar a que el vendedor presione Sincronizar: sin señal (o con algo pendiente
   /// por subir) lo intenta cada [cada]; con señal, sincroniza cuando el último contacto tiene más de [conSenalCada].
   /// Así el indicador regresa a verde en cuanto vuelve la conexión y no cae en rojo mientras hay señal.
-  void vigilarSenal({Duration cada = const Duration(seconds: 15),
-      Duration conSenalCada = const Duration(seconds: 90)}) {
+  void vigilarSenal({
+    Duration cada = const Duration(seconds: 15),
+    Duration conSenalCada = const Duration(seconds: 90),
+  }) {
     _vigia?.cancel();
     _vigia = Timer.periodic(cada, (_) => revisarSenal(conSenalCada: conSenalCada));
   }
@@ -329,6 +466,7 @@ class Motor extends ChangeNotifier {
   @override
   void dispose() {
     _vigia?.cancel();
+    _recorrido?.cancel();
     super.dispose();
   }
 
@@ -388,6 +526,8 @@ class Motor extends ChangeNotifier {
         await _guardarEstado();
       }
       notifyListeners();
+      // Jornada que se abrió o se cerró en Odoo: el recorrido arranca o se detiene solo.
+      if (ubicador != null) unawaited(revisarRecorrido().catchError((_) {}));
     }
   }
 
@@ -476,8 +616,7 @@ class Motor extends ChangeNotifier {
   final _imagenes = <int, Uint8List?>{};
 
   /// La miniatura si ya está en memoria (para pintar sin parpadeo); `null` si hay que leerla con [imagen].
-  (Uint8List?,)? imagenEnMemoria(int productoId) =>
-      _imagenes.containsKey(productoId) ? (_imagenes[productoId],) : null;
+  (Uint8List?,)? imagenEnMemoria(int productoId) => _imagenes.containsKey(productoId) ? (_imagenes[productoId],) : null;
 
   /// Miniatura guardada del producto, o null si no tiene (o aún no baja). Funciona sin señal.
   Future<Uint8List?> imagen(int productoId) async {

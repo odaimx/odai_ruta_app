@@ -9,6 +9,7 @@ import 'src/pantallas/emparejar.dart';
 import 'src/pantallas/inicio.dart';
 import 'src/pantallas/pin.dart';
 import 'src/tema.dart';
+import 'src/ubicacion.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +19,7 @@ void main() {
     borrarBase: BaseLocal.borrarArchivo,
     // http:// solo al programar; el APK de entrega exige https://.
     permitirHttp: kDebugMode,
-  );
+  )..ubicador = UbicadorGps();
   runApp(OdaiRutaApp(motor: motor));
   motor.iniciar().then((_) {
     motor.sincronizar();
@@ -55,6 +56,8 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
       _enSegundoPlano = DateTime.now();
+      // El recorrido solo se graba con la app abierta.
+      widget.motor.detenerRecorrido();
     } else if (state == AppLifecycleState.resumed) {
       // Más de 5 minutos fuera de la app: se vuelve a pedir el PIN.
       final desde = _enSegundoPlano;
@@ -62,6 +65,7 @@ class _OdaiRutaAppState extends State<OdaiRutaApp> with WidgetsBindingObserver {
         widget.motor.bloquearPantalla();
       }
       widget.motor.sincronizar();
+      widget.motor.revisarRecorrido();
     }
   }
 

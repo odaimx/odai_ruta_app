@@ -445,7 +445,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
           acciones: [
             Accion(Icons.person, 'Ver ficha del cliente',
                 () => _ir(PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
-            if (abierta)
+            if (abierta && ruta.cobra(widget.jornadaId))
               Accion(Icons.payments, 'Cobrar',
                   () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
             if (abierta && ruta.estado(v) == 'pendiente') Accion(Icons.block, 'Sin venta', _sinVenta),

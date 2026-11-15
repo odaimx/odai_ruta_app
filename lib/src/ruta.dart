@@ -57,10 +57,10 @@ class Linea {
   }
 
   Map<String, Object?> paraOdoo() => {
-        'product_id': productId,
-        'cantidad': cantidad,
-        if (uomId != null) 'uom_id': uomId,
-      };
+    'product_id': productId,
+    'cantidad': cantidad,
+    if (uomId != null) 'uom_id': uomId,
+  };
 }
 
 /// Resumen del día del vendedor.
@@ -87,8 +87,16 @@ class Tablero {
 /// Lo que el vendedor ve de su ruta, armado con lo que bajó de Odoo más lo que aún espera en la cola (así un
 /// pedido capturado sin señal ya se ve en la lista y en el saldo del cliente).
 class Ruta {
-  Ruta._(this.jornadas, this.catalogo, this._listas, this._visitaLista, this._iva, this._facturas, this.motivos,
-      this._pendientes);
+  Ruta._(
+    this.jornadas,
+    this.catalogo,
+    this._listas,
+    this._visitaLista,
+    this._iva,
+    this._facturas,
+    this.motivos,
+    this._pendientes,
+  );
 
   final List<Map> jornadas;
   final List<Map> catalogo;
@@ -124,12 +132,40 @@ class Ruta {
 
   Map config(int jornadaId) => (jornada(jornadaId)?['config'] as Map?) ?? const {};
 
+  /// Puede cobrar en la jornada (en reparto, si la ruta tiene "El chofer cobra") y hay formas de cobro.
+  bool cobra(int jornadaId) =>
+      config(jornadaId)['cobra'] != false && ((config(jornadaId)['diarios'] as List?) ?? const []).isNotEmpty;
+
+  /// Mapa de la jornada: fondo (teselas), tolerancia, recorrido y aviso de ubicación.
+  Map mapa(int jornadaId) => (config(jornadaId)['mapa'] as Map?) ?? const {};
+
+  /// La jornada en ruta (abierta) del celular, si hay.
+  int? jornadaEnRuta() {
+    for (final j in jornadas) {
+      final datos = (j['jornada'] as Map?) ?? const {};
+      if (datos['state'] == 'abierta' && datos['id'] is int) return datos['id'] as int;
+    }
+    return null;
+  }
+
+  /// Ya se marcó la llegada a la visita (en Odoo o esperando en la cola).
+  bool llegada(Map visita) =>
+      '${visita['llegada'] ?? ''}'.isNotEmpty ||
+      _pendientesDe(visita['id'] as int).any((o) => o.tipo == 'gps' && o.datos['evento'] == 'llegada');
+
+  /// Orden del día que dejó el vendedor y aún espera en la cola (la última operación de orden manda).
+  Map<int, int> _ordenEnCola(int jornadaId) {
+    final ops = _pendientes.where((o) => o.tipo == 'orden' && o.datos['jornada_id'] == jornadaId).toList();
+    if (ops.isEmpty) return const {};
+    final ids = ((ops.last.datos['visitas'] as List?) ?? const []).whereType<int>().toList();
+    return {for (var i = 0; i < ids.length; i++) ids[i]: i};
+  }
+
   Moneda moneda(int jornadaId) => Moneda.desde(config(jornadaId)['moneda']);
 
   /// Id provisional (negativo) de un cliente dado de alta sin señal: se usa en pantalla hasta que Odoo crea la
   /// visita; lo que se capture para él sube con `visita_uuid`.
-  static int idProvisional(String uuid) =>
-      -(int.parse(uuid.replaceAll('-', '').substring(0, 7), radix: 16) + 1);
+  static int idProvisional(String uuid) => -(int.parse(uuid.replaceAll('-', '').substring(0, 7), radix: 16) + 1);
 
   Iterable<Operacion> get _altas => _pendientes.where((o) => o.tipo == 'cliente_nuevo');
 
@@ -140,15 +176,16 @@ class Ruta {
         if (idProvisional(a.uuid) == visitaId) uuidAlta = a.uuid;
       }
     }
-    return _pendientes.where((o) =>
-        o.tipo != 'cliente_nuevo' &&
-        (o.datos['visita_id'] == visitaId || (uuidAlta != null && o.datos['visita_uuid'] == uuidAlta)));
+    return _pendientes.where(
+      (o) =>
+          o.tipo != 'cliente_nuevo' &&
+          (o.datos['visita_id'] == visitaId || (uuidAlta != null && o.datos['visita_uuid'] == uuidAlta)),
+    );
   }
 
   /// Devolución de [pedidoId] que espera en la cola (para no capturarla dos veces).
-  Operacion? devolucionEnCola(int visitaId, int pedidoId) => _pendientesDe(visitaId)
-      .where((o) => o.tipo == 'devolucion' && o.datos['pedido_id'] == pedidoId)
-      .firstOrNull;
+  Operacion? devolucionEnCola(int visitaId, int pedidoId) =>
+      _pendientesDe(visitaId).where((o) => o.tipo == 'devolucion' && o.datos['pedido_id'] == pedidoId).firstOrNull;
 
   /// Motivos de devolución que bajaron con la jornada.
   List<Map> motivosDevolucion(int jornadaId) =>
@@ -174,35 +211,38 @@ class Ruta {
     return v;
   }
 
-  static String direccionDe(Map contacto) => [contacto['calle'], contacto['colonia'], contacto['ciudad']]
-      .where((p) => p is String && p.trim().isNotEmpty)
-      .join(', ');
+  static String direccionDe(Map contacto) => [
+    contacto['calle'],
+    contacto['colonia'],
+    contacto['ciudad'],
+  ].where((p) => p is String && p.trim().isNotEmpty).join(', ');
 
   /// Clientes dados de alta en el celular que aún no llegan a Odoo: se venden de contado.
   List<Map> _altasDe(int jornadaId) => [
-        for (final a in _altas.where((a) => a.datos['jornada_id'] == jornadaId))
-          {
-            'id': idProvisional(a.uuid),
-            'uuid_alta': a.uuid,
-            'cliente': a.datos['nombre'] ?? 'Cliente nuevo',
-            'comercial': a.datos['comercial'] ?? '',
-            'telefono': a.datos['telefono'] ?? '',
-            'direccion': direccionDe(a.datos),
-            'contacto': {
-              for (final k in ['nombre', 'comercial', 'telefono', 'correo', 'calle', 'colonia', 'ciudad', 'cp']) k: a.datos[k] ?? '',
-              'estado': a.datos['estado'] ?? false,
-              'pais': a.datos['pais'] ?? false,
-            },
-            'fiscal': {...((a.datos['fiscal'] as Map?) ?? const {}), 'cp': a.datos['cp'] ?? ''},
-            'estado': 'pendiente',
-            'secuencia': 100000,
-            'alta_ruta': true,
-            'fuera_de_ruta': true,
-            'credito': {'a_credito': false, 'estado': 'ok'},
-            'pedidos': const [],
-            'codigos': const [],
-          }
-      ];
+    for (final a in _altas.where((a) => a.datos['jornada_id'] == jornadaId))
+      {
+        'id': idProvisional(a.uuid),
+        'uuid_alta': a.uuid,
+        'cliente': a.datos['nombre'] ?? 'Cliente nuevo',
+        'comercial': a.datos['comercial'] ?? '',
+        'telefono': a.datos['telefono'] ?? '',
+        'direccion': direccionDe(a.datos),
+        'contacto': {
+          for (final k in ['nombre', 'comercial', 'telefono', 'correo', 'calle', 'colonia', 'ciudad', 'cp'])
+            k: a.datos[k] ?? '',
+          'estado': a.datos['estado'] ?? false,
+          'pais': a.datos['pais'] ?? false,
+        },
+        'fiscal': {...((a.datos['fiscal'] as Map?) ?? const {}), 'cp': a.datos['cp'] ?? ''},
+        'estado': 'pendiente',
+        'secuencia': 100000,
+        'alta_ruta': true,
+        'fuera_de_ruta': true,
+        'credito': {'a_credito': false, 'estado': 'ok'},
+        'pedidos': const [],
+        'codigos': const [],
+      },
+  ];
 
   /// Estado de la visita contando lo que espera en la cola.
   String estado(Map visita) {
@@ -230,9 +270,13 @@ class Ruta {
       ..._altasDe(jornadaId).map(_conContacto),
     ];
     int orden(Map v) => estado(v) == 'pendiente' ? 0 : 1;
+    final enCola = _ordenEnCola(jornadaId);
+    int secuencia(Map v) => enCola.isNotEmpty && enCola.containsKey(v['id'])
+        ? enCola[v['id']]! * 10
+        : (v['secuencia'] as int? ?? 0) + (enCola.isNotEmpty ? 100000 : 0);
     todas.sort((a, b) {
       final c = orden(a) - orden(b);
-      return c != 0 ? c : ((a['secuencia'] as int? ?? 0) - (b['secuencia'] as int? ?? 0));
+      return c != 0 ? c : (secuencia(a) - secuencia(b));
     });
     return todas;
   }
@@ -276,13 +320,17 @@ class Ruta {
     final estados = todas.map(estado).toList();
     return Tablero(
       // Una devolución que se aplica sola resta de lo vendido desde que se captura.
-      vendido: _num(datos['monto']) +
+      vendido:
+          _num(datos['monto']) +
           enCola.where((o) => o.tipo == 'pedido').fold(0.0, (s, o) => s + _num(o.datos['total'])) -
           enCola
               .where((o) => o.tipo == 'devolucion' && o.datos['oficina'] != true)
               .fold(0.0, (s, o) => s + _num(o.datos['monto'])),
-      cobrado: _num(datos['cobrado']) +
-          enCola.where((o) => o.tipo == 'cobro' || o.tipo == 'anticipo').fold(0.0, (s, o) => s + _num(o.datos['monto'])),
+      cobrado:
+          _num(datos['cobrado']) +
+          enCola
+              .where((o) => o.tipo == 'cobro' || o.tipo == 'anticipo')
+              .fold(0.0, (s, o) => s + _num(o.datos['monto'])),
       visitas: todas.length,
       hechas: estados.where((e) => e != 'pendiente').length,
       conPedido: estados.where((e) => e == 'pedido' || e == 'entregado' || e == 'parcial').length,
@@ -297,7 +345,8 @@ class Ruta {
     final contacto = (visita['contacto'] as Map?) ?? const {};
     final catalogos = (config(jornadaId)['catalogos_fiscales'] as Map?) ?? const {};
     final rfc = '${fiscal['rfc'] ?? ''}'.trim().toUpperCase();
-    final cp = '${fiscal['cp'] is String && (fiscal['cp'] as String).isNotEmpty ? fiscal['cp'] : contacto['cp'] ?? ''}'.trim();
+    final cp = '${fiscal['cp'] is String && (fiscal['cp'] as String).isNotEmpty ? fiscal['cp'] : contacto['cp'] ?? ''}'
+        .trim();
     bool usa(String clave) => ((catalogos[clave] as List?) ?? const []).isNotEmpty;
     return [
       if (rfc.isEmpty || rfcGenericos.contains(rfc)) 'RFC',
@@ -314,9 +363,9 @@ class Ruta {
   List<Map> entregas(Map visita) => ((visita['entregas'] as List?) ?? const []).whereType<Map>().toList();
 
   /// Valor (con impuestos) de lo que se entrega de un pedido con las cantidades indicadas por ``move_id``.
-  static double valorEntregado(Map entrega, Map<int, double> cantidades) =>
-      ((entrega['lineas'] as List?) ?? const []).whereType<Map>().fold(
-          0.0, (s, l) => s + _num(l['precio']) * (cantidades[l['move_id']] ?? _num(l['cantidad'])));
+  static double valorEntregado(Map entrega, Map<int, double> cantidades) => ((entrega['lineas'] as List?) ?? const [])
+      .whereType<Map>()
+      .fold(0.0, (s, l) => s + _num(l['precio']) * (cantidades[l['move_id']] ?? _num(l['cantidad'])));
 
   /// Lo que falta por cobrar al entregar un pedido de contado, contando lo que espera en la cola: una entrega en
   /// parte cobra solo lo entregado y un cobro capturado ya se descuenta.
@@ -331,7 +380,7 @@ class Ruta {
       if (op.datos['resultado'] == 'parcial' && facturas.isEmpty) {
         final cantidades = <int, double>{
           for (final l in ((op.datos['lineas'] as List?) ?? const []).whereType<Map>())
-            l['move_id'] as int: _num(l['cantidad'])
+            l['move_id'] as int: _num(l['cantidad']),
         };
         for (final l in ((entrega['lineas'] as List?) ?? const []).whereType<Map>()) {
           cantidades.putIfAbsent(l['move_id'] as int, () => 0);
@@ -341,7 +390,8 @@ class Ruta {
       }
     }
     for (final o in ops) {
-      final esDelPedido = (o.tipo == 'anticipo' && o.datos['pedido_id'] == entrega['pedido_id']) ||
+      final esDelPedido =
+          (o.tipo == 'anticipo' && o.datos['pedido_id'] == entrega['pedido_id']) ||
           (o.tipo == 'cobro' &&
               facturas.isNotEmpty &&
               ((o.datos['factura_ids'] as List?) ?? const []).any(facturas.contains));
@@ -381,17 +431,21 @@ class Ruta {
       lineas.fold(0.0, (s, l) => s + precio(visitaId, l.producto, uomId: l.uomId) * l.cantidad);
 
   double total(int visitaId, List<Linea> lineas) => lineas.fold(
-      0.0, (s, l) => s + precio(visitaId, l.producto, uomId: l.uomId) * l.cantidad * factorIva(l.productId));
+    0.0,
+    (s, l) => s + precio(visitaId, l.producto, uomId: l.uomId) * l.cantidad * factorIva(l.productId),
+  );
 
   /// Busca por nombre, clave o código de barras. Un código de barras exacto devuelve también su embalaje.
   List<Map> buscar(String texto) {
     final t = texto.trim().toLowerCase();
     if (t.isEmpty) return catalogo.take(60).toList();
     return catalogo
-        .where((p) =>
-            '${p['name']}'.toLowerCase().contains(t) ||
-            '${p['code']}'.toLowerCase().contains(t) ||
-            ((p['barcodes'] as Map?) ?? const {}).containsKey(texto.trim()))
+        .where(
+          (p) =>
+              '${p['name']}'.toLowerCase().contains(t) ||
+              '${p['code']}'.toLowerCase().contains(t) ||
+              ((p['barcodes'] as Map?) ?? const {}).containsKey(texto.trim()),
+        )
         .take(60)
         .toList();
   }

@@ -90,6 +90,7 @@ class _PantallaEntregaState extends State<PantallaEntrega> {
     final ruta = await Ruta.cargar(widget.motor);
     final visita = ruta.visita(widget.jornadaId, widget.visitaId);
     if (visita == null || !mounted) return;
+    if (!ruta.cobra(widget.jornadaId)) return;
     for (final e in ruta.entregas(visita)) {
       final falta = ruta.porCobrarEntrega(widget.visitaId, e);
       if (falta <= 0.004 || !mounted) continue;
@@ -180,7 +181,7 @@ class _PantallaEntregaState extends State<PantallaEntrega> {
                         PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)));
             _cargar();
           }),
-          if (abierta && porCobrar > 0)
+          if (abierta && porCobrar > 0 && ruta.cobra(widget.jornadaId))
             Accion(Icons.payments, 'Cobrar notas ${moneda(porCobrar)}', () async {
               await Navigator.push(
                   context,
@@ -289,7 +290,8 @@ class _PantallaEntregaState extends State<PantallaEntrega> {
           const Divider(),
           Row(children: [
             Expanded(child: Text('Por cobrar ${moneda(falta)}', style: const TextStyle(fontWeight: FontWeight.w700))),
-            if (!editable && (ruta.jornada(widget.jornadaId)?['jornada'] as Map?)?['state'] == 'abierta' &&
+            if (!editable && ruta.cobra(widget.jornadaId) &&
+                (ruta.jornada(widget.jornadaId)?['jornada'] as Map?)?['state'] == 'abierta' &&
                 ruta.estado(ruta.visita(widget.jornadaId, widget.visitaId)!) != 'no_entregado')
               FilledButton.icon(
                 icon: const Icon(Icons.payments),
