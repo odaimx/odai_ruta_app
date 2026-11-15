@@ -60,7 +60,10 @@ void main() {
 
     // Tocar el cliente lleva directo a los productos, con disponible y por cobrar arriba.
     await tester.tap(find.text('Lupita'));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    // La pantalla del pedido lee la base al abrir: primero se construye y luego se deja leer de verdad.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 300)));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('saldos')), findsOneWidget);
     expect(find.text('Disponible:  '), findsOneWidget);
