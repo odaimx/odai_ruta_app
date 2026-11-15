@@ -56,7 +56,7 @@ class _PantallaSinVentaState extends State<PantallaSinVenta> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sin venta')),
+      appBar: const CabeceraOdai(titulo: 'Sin venta'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

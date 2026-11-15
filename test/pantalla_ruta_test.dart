@@ -48,14 +48,21 @@ void main() {
     expect(find.text('Lupita'), findsOneWidget);
     expect(find.text('Don Pepe'), findsNothing, reason: 'Los visitados no estorban al buscar');
 
-    await tester.tap(find.text('Visitados (1)'));
+    await tester.tap(find.text('Visitados  1'));
     await tester.pumpAndSettle();
     expect(find.text('Lupita'), findsNothing);
     expect(find.text('Don Pepe'), findsOneWidget);
 
-    await tester.tap(find.text('Todos (2)'));
+    await tester.tap(find.text('Todos  2'));
     await tester.pumpAndSettle();
     expect(find.text('Lupita'), findsOneWidget);
     expect(find.text('Don Pepe'), findsOneWidget);
+
+    // Tocar el cliente lleva directo a los productos, con disponible y por cobrar arriba.
+    await tester.tap(find.text('Lupita'));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('saldos')), findsOneWidget);
+    expect(find.text('Disponible:  '), findsOneWidget);
   });
 }

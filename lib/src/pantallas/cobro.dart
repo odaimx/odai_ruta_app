@@ -119,7 +119,7 @@ class _PantallaCobroState extends State<PantallaCobro> {
     final diarios = _diariosDe(ruta);
     final esTransferencia = diarios.where((d) => d['id'] == _diario).firstOrNull?['efectivo'] == false;
     return Scaffold(
-      appBar: AppBar(title: const Text('Cobrar')),
+      appBar: const CabeceraOdai(titulo: 'Cobrar'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

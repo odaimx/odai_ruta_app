@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../motor.dart';
 import '../ruta.dart';
 import 'cliente.dart';
+import '../tema.dart';
 import 'cliente_datos.dart';
 import 'comun.dart';
+import 'pedido.dart';
 
 /// Los clientes de la jornada: primero los que faltan por visitar.
 class PantallaRuta extends StatefulWidget {
@@ -20,6 +22,7 @@ class PantallaRuta extends StatefulWidget {
 class _PantallaRutaState extends State<PantallaRuta> {
   Ruta? _ruta;
   String _filtro = '';
+  final _buscar = TextEditingController();
 
   /// Pendientes (por omisión), visitados o todos: los visitados no estorban al buscar.
   String _vista = 'pendientes';
@@ -34,7 +37,31 @@ class _PantallaRutaState extends State<PantallaRuta> {
   @override
   void dispose() {
     widget.motor.removeListener(_cargar);
+    _buscar.dispose();
     super.dispose();
+  }
+
+  /// Tocar un cliente lleva directo a levantar el pedido (con la jornada cerrada, a su ficha).
+  Future<void> _abrir(Map v, bool abierta) async {
+    final id = v['id'] as int;
+    await Navigator.push(
+        context,
+        MaterialPageRoute(
+            builder: (_) => abierta
+                ? PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)
+                : PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)));
+    _cargar();
+  }
+
+  /// Escanear el código del cliente (su clave o código de barras) para encontrarlo.
+  Future<void> _escanear() async {
+    final codigo = await escanear(context, titulo: 'Escanear cliente');
+    if (codigo == null || !mounted) return;
+    _buscar.text = codigo;
+    setState(() {
+      _filtro = codigo;
+      _vista = 'todos';
+    });
   }
 
   Future<void> _clienteNuevo() async {
@@ -43,7 +70,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
     await _cargar();
     if (id == null || !mounted) return;
     await Navigator.push(context,
-        MaterialPageRoute(builder: (_) => PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)));
+        MaterialPageRoute(builder: (_) => PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)));
     _cargar();
   }
 
@@ -102,10 +129,13 @@ class _PantallaRutaState extends State<PantallaRuta> {
     final abierta = jornada['state'] == 'abierta';
     final pendientesN = todas.where((v) => ruta.estado(v) == 'pendiente').length;
     return Scaffold(
-      appBar: AppBar(title: Text('${jornada['ruta']}')),
+      appBar: CabeceraOdai(
+          titulo: widget.motor.nombreVendedor.isEmpty ? '${jornada['ruta']}' : widget.motor.nombreVendedor,
+          subtitulo: '${jornada['ruta']}'),
+      bottomNavigationBar: const PieOdai(),
       body: Column(
         children: [
-          BarraAcciones(acciones: [
+          BarraAcciones(motor: widget.motor, acciones: [
             if (abierta) Accion(Icons.person_add, 'Nuevo cliente', _clienteNuevo, principal: true),
             Accion(Icons.sync, widget.motor.sincronizando ? 'Sincronizando...' : 'Sincronizar',
                 widget.motor.sincronizando ? null : () => widget.motor.sincronizar()),
@@ -113,21 +143,22 @@ class _PantallaRutaState extends State<PantallaRuta> {
           ]),
           if (aviso != null && aviso.isNotEmpty)
             MaterialBanner(content: Text(aviso), actions: const [SizedBox.shrink()]),
-          _PanelTablero(tablero: ruta.tablero(widget.jornadaId), moneda: moneda),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: TextField(
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Buscar cliente'),
+            padding: const EdgeInsets.fromLTRB(12, 14, 12, 10),
+            child: Buscador(
+              controller: _buscar,
+              hint: 'Buscar cliente',
               onChanged: (v) => setState(() => _filtro = v),
+              onEscanear: _escanear,
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(bottom: 6),
             child: Filtros<String>(
               opciones: [
-                ('pendientes', 'Pendientes ($pendientesN)'),
-                ('visitados', 'Visitados (${todas.length - pendientesN})'),
-                ('todos', 'Todos (${todas.length})'),
+                ('pendientes', 'Pendientes  $pendientesN'),
+                ('visitados', 'Visitados  ${todas.length - pendientesN}'),
+                ('todos', 'Todos  ${todas.length}'),
               ],
               elegido: _vista,
               onChanged: (v) => setState(() => _vista = v),
@@ -135,78 +166,53 @@ class _PantallaRutaState extends State<PantallaRuta> {
           ),
           Expanded(
             child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               itemCount: visitas.length,
               itemBuilder: (context, i) {
                 final v = visitas[i];
                 final estado = ruta.estado(v);
                 final porCobrar = ruta.porCobrar(v['id'] as int);
-                return ListTile(
-                  leading: CircleAvatar(child: Text('${v['secuencia'] ?? i + 1}')),
-                  title: Text('${(v['comercial'] as String?)?.isNotEmpty == true ? v['comercial'] : v['cliente']}'),
-                  subtitle: Text([
-                    etiquetasEstado[estado] ?? estado,
-                    if (ruta.enCola(v)) 'por enviar',
-                    if (porCobrar > 0) 'debe ${moneda(porCobrar)}',
-                  ].join(' · ')),
-                  trailing: Icon(estado == 'pendiente'
-                      ? Icons.chevron_right
-                      : estado == 'pedido'
-                          ? Icons.shopping_cart
-                          : Icons.block),
-                  onTap: () async {
-                    await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => PantallaCliente(
-                                motor: widget.motor, jornadaId: widget.jornadaId, visitaId: v['id'] as int)));
-                    _cargar();
-                  },
+                final comercial = '${v['comercial'] ?? ''}'.trim();
+                final bloqueado = (v['credito'] as Map?)?['estado'] == 'block';
+                final chico = Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF222222));
+                return TarjetaOdai(
+                  key: ValueKey('cliente_${v['id']}'),
+                  padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+                  onTap: () => _abrir(v, abierta),
+                  child: Row(children: [
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(comercial.isNotEmpty ? comercial : '${v['cliente']}',
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF111111))),
+                        if (comercial.isNotEmpty)
+                          Text('${v['cliente']}', style: const TextStyle(fontSize: 16, color: Color(0xFF222222))),
+                        if (porCobrar > 0) Text('Debe ${moneda(porCobrar)}', style: chico),
+                      ]),
+                    ),
+                    Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                      Text(etiquetasEstado[estado] ?? estado, style: chico),
+                      if (ruta.enCola(v)) Text('por enviar', style: chico),
+                      if (bloqueado)
+                        const Tooltip(
+                          message: 'Crédito bloqueado',
+                          child: Icon(Icons.credit_card_off, size: 18, color: Color(0xFFE53935)),
+                        ),
+                    ]),
+                    const SizedBox(width: 6),
+                    Icon(
+                        estado == 'pendiente'
+                            ? Icons.keyboard_double_arrow_right
+                            : estado == 'pedido'
+                                ? Icons.shopping_cart
+                                : Icons.block,
+                        size: 30,
+                        color: estado == 'pendiente' ? const Color(0xFF111111) : moradoOscuro),
+                  ]),
                 );
               },
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-
-class _PanelTablero extends StatelessWidget {
-  const _PanelTablero({required this.tablero, required this.moneda});
-
-  final Tablero tablero;
-  final Moneda moneda;
-
-  @override
-  Widget build(BuildContext context) {
-    final tema = Theme.of(context);
-    Widget dato(String titulo, String valor, {String? pie}) => Expanded(
-          child: Column(children: [
-            Text(titulo, style: tema.textTheme.labelMedium),
-            FittedBox(child: Text(valor, style: tema.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold))),
-            if (pie != null) Text(pie, style: tema.textTheme.bodySmall),
-          ]),
-        );
-    final avance = tablero.visitas == 0 ? 0.0 : tablero.hechas / tablero.visitas;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      color: tema.colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(children: [
-          Row(children: [
-            dato('Vendido', moneda(tablero.vendido)),
-            dato('Cobrado', moneda(tablero.cobrado)),
-            dato('Visitas', '${tablero.hechas}/${tablero.visitas}',
-                pie: '${tablero.conPedido} con pedido · ${tablero.sinVenta} sin venta'),
-          ]),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(value: avance, minHeight: 6, borderRadius: BorderRadius.circular(3)),
-          const SizedBox(height: 4),
-          Text(tablero.pendientes == 0 ? 'Ruta completa' : '${tablero.pendientes} por visitar',
-              style: tema.textTheme.bodySmall),
-        ]),
       ),
     );
   }

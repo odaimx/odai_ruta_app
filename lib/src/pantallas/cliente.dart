@@ -56,9 +56,12 @@ class _PantallaClienteState extends State<PantallaCliente> {
     final tema = Theme.of(context);
     final pedidos = ((v['pedidos'] as List?) ?? const []).whereType<Map>().toList();
     return Scaffold(
-      appBar: AppBar(title: Text('${v['cliente']}')),
+      appBar: CabeceraOdai(
+          titulo: widget.motor.nombreVendedor.isEmpty ? '${v['cliente']}' : widget.motor.nombreVendedor,
+          subtitulo: '${v['cliente']}'),
+      bottomNavigationBar: const PieOdai(),
       body: Column(children: [
-        BarraAcciones(acciones: [
+        BarraAcciones(motor: widget.motor, acciones: [
           if (abierta) ...[
             Accion(Icons.add_shopping_cart, 'Levantar pedido',
                 () => _ir(PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),

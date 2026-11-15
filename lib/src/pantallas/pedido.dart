@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../motor.dart';
 import '../ruta.dart';
+import '../tema.dart';
+import 'cliente.dart';
+import 'cliente_datos.dart';
+import 'cobro.dart';
 import 'comun.dart';
+import 'sin_venta.dart';
 
 /// Levantar pedido: buscar o escanear productos, carrito, contado o crédito, factura. El precio lo pone la lista
 /// de precios del cliente; el vendedor no lo cambia (si está mal, la oficina corrige la lista).
@@ -39,9 +43,57 @@ class _PantallaPedidoState extends State<PantallaPedido> {
         _ruta = r;
         _visita = v;
         _contado = ((v?['credito'] as Map?)?['a_credito']) != true;
-        _factura = v?['pide_factura'] == true;
+        // Pide factura por costumbre, pero solo se marca sola si ya tiene sus datos fiscales.
+        _factura = v?['pide_factura'] == true && v != null && r.faltanFiscales(widget.jornadaId, v).isEmpty;
       });
     });
+  }
+
+  /// Vuelve a leer la visita (después de cobrar o de modificar el cliente) sin perder el carrito.
+  Future<void> _recargar() async {
+    final r = await Ruta.cargar(widget.motor);
+    if (!mounted) return;
+    setState(() {
+      _ruta = r;
+      _visita = r.visita(widget.jornadaId, widget.visitaId) ?? _visita;
+    });
+  }
+
+  Future<void> _ir(Widget pantalla) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => pantalla));
+    await _recargar();
+  }
+
+  Future<void> _sinVenta() async {
+    if (_lineas.isNotEmpty &&
+        !await confirmar(context, 'Sin venta', 'Ya agregó productos. ¿Descartarlos y registrar la visita sin venta?',
+            si: 'Sin venta')) {
+      return;
+    }
+    if (!mounted) return;
+    await _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId));
+    if (mounted && _ruta != null && _visita != null && _ruta!.estado(_visita!) == 'sin_venta') Navigator.pop(context);
+  }
+
+  Future<void> _modificarCliente() => _ir(
+      PantallaDatosCliente(motor: widget.motor, jornadaId: widget.jornadaId, visita: _visita));
+
+  /// Para pedir factura el cliente necesita sus datos fiscales: si faltan, se ofrece completarlos ahí mismo.
+  Future<bool> _puedeFacturar() async {
+    final faltan = _ruta!.faltanFiscales(widget.jornadaId, _visita!);
+    if (faltan.isEmpty) return true;
+    final completar = await confirmar(
+        context,
+        'Faltan datos fiscales',
+        'Para facturarle a su nombre falta: ${faltan.join(', ')}. Complételos en Modificar cliente con la '
+            'Constancia de Situación Fiscal.',
+        si: 'Completar');
+    if (!completar || !mounted) return false;
+    await _modificarCliente();
+    if (!mounted) return false;
+    final siguen = _ruta!.faltanFiscales(widget.jornadaId, _visita!);
+    if (siguen.isNotEmpty) avisar(context, 'Aún falta: ${siguen.join(', ')}.', error: true);
+    return siguen.isEmpty;
   }
 
   @override
@@ -62,7 +114,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
   }
 
   Future<void> _escanear() async {
-    final codigo = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const _Escaner()));
+    final codigo = await escanear(context, titulo: 'Escanear producto');
     if (codigo == null || !mounted) return;
     final hallado = _ruta!.porCodigo(codigo);
     if (hallado == null) {
@@ -74,6 +126,11 @@ class _PantallaPedidoState extends State<PantallaPedido> {
   }
 
   Future<void> _enviar() async {
+    if (_factura && !await _puedeFacturar()) {
+      if (mounted) avisar(context, 'Sin datos fiscales completos no se puede enviar con factura.', error: true);
+      return;
+    }
+    if (!mounted) return;
     final ruta = _ruta!;
     final v = _visita!;
     final moneda = ruta.moneda(widget.jornadaId);
@@ -185,84 +242,100 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     final cantidad = _cantidad(p, uomId);
     final kit = ((p['kit'] as List?) ?? const []).whereType<Map>().toList();
     final enCarrito = _lineas.where((l) => l.productId == p['id']).fold(0.0, (s, l) => s + l.cantidad);
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      color: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-            color: enCarrito > 0 ? Theme.of(context).colorScheme.primary : Colors.grey.shade500,
-            width: enCarrito > 0 ? 1.5 : 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-        child: Row(children: [
-          if (p['imagen'] is String && (p['imagen'] as String).isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: Miniatura(motor: widget.motor, productoId: p['id'] as int),
+    final mostrarFoto = ruta.config(widget.jornadaId)['imagenes'] == true ||
+        (p['imagen'] is String && (p['imagen'] as String).isNotEmpty);
+    Widget unidadChip(String nombre, bool elegida, VoidCallback onTap) => InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 96, minHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: lavanda,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: elegida ? moradoOdai : bordeMorado, width: elegida ? 1.6 : 1),
             ),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${p['name']}', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF111111))),
-              Text('${moneda(ruta.precio(widget.visitaId, p, uomId: uomId))} / $unidad',
-                  style: const TextStyle(color: Color(0xFF222222))),
-              if (kit.isNotEmpty)
-                Text('Kit: ${kit.map((k) => '${k['cantidad']} ${k['name']}').join(', ')}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF333333))),
-              if (uoms.isNotEmpty)
-                Wrap(spacing: 6, children: [
-                  ChoiceChip(
-                    label: Text('${p['uom']}'),
-                    selected: uomId == null,
-                    onSelected: (_) => setState(() => _uomElegido.remove(p['id'])),
-                  ),
-                  for (final u in uoms)
-                    ChoiceChip(
-                      label: Text('${u['name']}'),
-                      selected: uomId == u['id'],
-                      onSelected: (_) => setState(() => _uomElegido[p['id'] as int] = u['id'] as int),
-                    ),
-                ]),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (elegida) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.check, size: 18)),
+              Text(nombre,
+                  style: TextStyle(fontSize: 14, fontWeight: elegida ? FontWeight.w700 : FontWeight.w500,
+                      color: const Color(0xFF111111))),
             ]),
           ),
-          if (cantidad == 0)
-            IconButton.filledTonal(
-              tooltip: 'Agregar',
-              iconSize: 28,
+        );
+    return TarjetaOdai(
+      key: ValueKey('producto_${p['id']}'),
+      margen: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      child: Row(children: [
+        if (mostrarFoto)
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Miniatura(motor: widget.motor, productoId: p['id'] as int, lado: 50),
+          ),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${p['name']}'.toUpperCase(),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF222222))),
+            Text('${moneda(ruta.precio(widget.visitaId, p, uomId: uomId))} / $unidad',
+                style: const TextStyle(fontSize: 16, color: Color(0xFF222222))),
+            if (kit.isNotEmpty)
+              Text('Kit: ${kit.map((k) => '${k['cantidad']} ${k['name']}').join(', ')}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF333333))),
+            if (uoms.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(spacing: 8, runSpacing: 8, children: [
+                  unidadChip('${p['uom']}', uomId == null, () => setState(() => _uomElegido.remove(p['id']))),
+                  for (final u in uoms)
+                    unidadChip('${u['name']}', uomId == u['id'],
+                        () => setState(() => _uomElegido[p['id'] as int] = u['id'] as int)),
+                ]),
+              ),
+            if (enCarrito > 0 && cantidad == 0)
+              Text('En el pedido: ${_textoCantidad(enCarrito)} en otra unidad',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: moradoOscuro)),
+          ]),
+        ),
+        if (cantidad == 0)
+          SizedBox(
+            width: 50,
+            height: 46,
+            child: OutlinedButton(
+              key: ValueKey('agregar_${p['id']}'),
               onPressed: () => _poner(p, uomId, 1),
-              icon: const Icon(Icons.add),
-            )
-          else
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(
-                icon: const Icon(Icons.remove_circle_outline),
-                iconSize: 30,
-                onPressed: () => _poner(p, uomId, cantidad - 1),
-              ),
-              InkWell(
-                onTap: () => _teclear(p, uomId),
-                child: Container(
-                  constraints: const BoxConstraints(minWidth: 44),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).colorScheme.outline),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(_textoCantidad(cantidad),
-                      textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
+              style: OutlinedButton.styleFrom(backgroundColor: lavanda, padding: EdgeInsets.zero),
+              child: const Icon(Icons.add, size: 36, color: Color(0xFF111111)),
+            ),
+          )
+        else
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline, color: moradoOscuro),
+              iconSize: 30,
+              onPressed: () => _poner(p, uomId, cantidad - 1),
+            ),
+            InkWell(
+              onTap: () => _teclear(p, uomId),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 44),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: lavanda,
+                  border: Border.all(color: moradoOdai),
+                  borderRadius: BorderRadius.circular(8),
                 ),
+                child: Text(_textoCantidad(cantidad),
+                    textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
               ),
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                iconSize: 30,
-                onPressed: () => _poner(p, uomId, cantidad + 1),
-              ),
-            ]),
-        ]),
-      ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, color: moradoOscuro),
+              iconSize: 30,
+              onPressed: () => _poner(p, uomId, cantidad + 1),
+            ),
+          ]),
+      ]),
     );
   }
 
@@ -313,7 +386,14 @@ class _PantallaPedidoState extends State<PantallaPedido> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Quiere factura'),
                   value: _factura,
-                  onChanged: (x) => cambiar(() => _factura = x),
+                  subtitle: ruta.faltanFiscales(widget.jornadaId, _visita!).isEmpty
+                      ? null
+                      : Text('Faltan: ${ruta.faltanFiscales(widget.jornadaId, _visita!).join(', ')}',
+                          style: TextStyle(color: Theme.of(c).colorScheme.error)),
+                  onChanged: (x) async {
+                    if (x && !await _puedeFacturar()) return;
+                    cambiar(() => _factura = x);
+                  },
                 ),
                 TextField(controller: _nota, decoration: const InputDecoration(labelText: 'Nota'), maxLines: 2),
                 const SizedBox(height: 12),
@@ -342,17 +422,50 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     final resultados = ruta.buscar(_busqueda);
     final total = ruta.total(widget.visitaId, _lineas);
     final piezas = _lineas.length;
+    final credito = (v['credito'] as Map?) ?? const {};
+    final disponible = credito['disponible_ruta'];
+    final textoDisponible = credito['a_credito'] == true
+        ? (disponible is num ? moneda(disponible - ruta.pedidoEnCola(widget.visitaId)) : 'Sin límite')
+        : 'Contado';
+    final abierta = (ruta.jornada(widget.jornadaId)?['jornada'] as Map?)?['state'] == 'abierta';
+    const chico = TextStyle(fontSize: 15, color: Color(0xFF111111));
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(title: Text('${v['cliente']}')),
+      appBar: CabeceraOdai(
+          titulo: widget.motor.nombreVendedor.isEmpty ? '${v['cliente']}' : widget.motor.nombreVendedor,
+          subtitulo: '${(v['comercial'] as String?)?.isNotEmpty == true ? v['comercial'] : v['cliente']}'),
       body: Column(children: [
-        BarraAcciones(acciones: [Accion(Icons.qr_code_scanner, 'Escanear código', _escanear, principal: true)]),
+        BarraAcciones(
+          motor: widget.motor,
+          acciones: [
+            Accion(Icons.person, 'Ver ficha del cliente',
+                () => _ir(PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+            if (abierta)
+              Accion(Icons.payments, 'Cobrar',
+                  () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+            if (abierta && ruta.estado(v) == 'pendiente') Accion(Icons.block, 'Sin venta', _sinVenta),
+            Accion(Icons.edit, 'Modificar cliente', _modificarCliente),
+          ],
+          centro: Table(
+            key: const ValueKey('saldos'),
+            defaultColumnWidth: const IntrinsicColumnWidth(),
+            children: [
+              TableRow(children: [
+                const Text('Disponible:  ', style: chico),
+                Text(textoDisponible, style: chico, textAlign: TextAlign.right),
+              ]),
+              TableRow(children: [
+                const Text('Por cobrar:  ', style: chico),
+                Text(moneda(ruta.porCobrar(widget.visitaId)), style: chico, textAlign: TextAlign.right),
+              ]),
+            ],
+          ),
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-          child: TextField(
-            decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search), hintText: 'Nombre, clave o código', border: OutlineInputBorder()),
+          padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+          child: Buscador(
+            hint: 'Nombre, clave o código',
             onChanged: (t) => setState(() => _busqueda = t),
+            onEscanear: _escanear,
           ),
         ),
         Expanded(
@@ -373,7 +486,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
             texto: piezas == 0
                 ? 'Agregue productos'
                 : '${piezas == 1 ? '1 producto' : '$piezas productos'} · ${moneda(total)} · Revisar',
-            onPressed: piezas == 0 || _enviando ? null : _revisar,
+            onPressed: piezas == 0 || _enviando || !abierta ? null : _revisar,
           ),
         ),
       ),
@@ -501,41 +614,6 @@ class _CobroAlVenderState extends State<_CobroAlVender> {
         TextButton(onPressed: () => Navigator.pop(context), child: Text(_registra ? 'Después' : 'Listo')),
         if (_registra) FilledButton(onPressed: _registrar, child: const Text('Registrar cobro')),
       ],
-    );
-  }
-}
-
-class _Escaner extends StatefulWidget {
-  const _Escaner();
-
-  @override
-  State<_Escaner> createState() => _EscanerState();
-}
-
-class _EscanerState extends State<_Escaner> {
-  final _camara = MobileScannerController();
-  bool _listo = false;
-
-  @override
-  void dispose() {
-    _camara.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Escanear producto')),
-      body: MobileScanner(
-        controller: _camara,
-        onDetect: (captura) {
-          final valor = captura.barcodes.firstOrNull?.rawValue;
-          if (valor != null && !_listo) {
-            _listo = true;
-            Navigator.pop(context, valor);
-          }
-        },
-      ),
     );
   }
 }

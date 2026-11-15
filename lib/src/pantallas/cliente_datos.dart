@@ -267,7 +267,7 @@ class _PantallaDatosClienteState extends State<PantallaDatosCliente> {
     final estados = ((_direccion['estados'] as List?) ?? const []).whereType<Map>().where((e) => e['pais'] == _pais).toList();
     final hayFiscales = _catalogos.any((c) => _lista(c.$1).isNotEmpty);
     return Scaffold(
-      appBar: AppBar(title: Text(_nuevo ? 'Cliente nuevo' : 'Datos del cliente')),
+      appBar: CabeceraOdai(titulo: _nuevo ? 'Cliente nuevo' : 'Datos del cliente'),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../motor.dart';
+import '../tema.dart';
 import 'comun.dart';
 
 /// El vendedor abre la app con su PIN, también sin señal.
@@ -66,88 +67,169 @@ class _PantallaPinState extends State<PantallaPin> {
         (widget.motor.pinTemporal ? 'Ya llegó su PIN temporal. Escríbalo.' : 'Conectado. Aún no hay PIN nuevo.'));
   }
 
+  ({String texto, String autor})? _frase;
+
+  @override
+  void initState() {
+    super.initState();
+    // Una frase distinta cada vez que se muestra la pantalla del PIN.
+    widget.motor.fraseAlAzar().then((f) {
+      if (mounted) setState(() => _frase = f);
+    });
+  }
+
+  Widget _teclado(ThemeData tema) {
+    Widget tecla(String t) {
+      final Widget contenido = switch (t) {
+        '<' => const Icon(Icons.backspace_outlined, size: 30, color: moradoOdai),
+        'ok' => const Icon(Icons.check, size: 38, color: Colors.white),
+        _ => Text(t, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w400, color: moradoOdai)),
+      };
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.all(5),
+          child: SizedBox(
+            height: 58,
+            child: t == 'ok'
+                ? FilledButton(
+                    key: const ValueKey('tecla_ok'),
+                    onPressed: () => _tecla(t),
+                    style: FilledButton.styleFrom(backgroundColor: moradoCabecera, padding: EdgeInsets.zero),
+                    child: contenido)
+                : OutlinedButton(
+                    key: ValueKey('tecla_$t'),
+                    onPressed: () => _tecla(t),
+                    style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                        side: const BorderSide(color: bordeMorado, width: 1.5)),
+                    child: contenido),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(children: [
+        for (final fila in const [
+          ['1', '2', '3'],
+          ['4', '5', '6'],
+          ['7', '8', '9'],
+          ['<', '0', 'ok'],
+        ])
+          Row(children: [for (final t in fila) tecla(t)]),
+      ]),
+    );
+  }
+
+  Widget _fraseCelebre(ThemeData tema) {
+    final f = _frase;
+    if (f == null) return const SizedBox(height: 8);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('"${f.texto}"',
+            key: const ValueKey('frase'),
+            textAlign: TextAlign.center,
+            style: tema.textTheme.titleMedium?.copyWith(fontStyle: FontStyle.italic, color: const Color(0xFF222222))),
+        const SizedBox(height: 4),
+        Text(f.autor,
+            key: const ValueKey('frase_autor'),
+            textAlign: TextAlign.right,
+            style: tema.textTheme.bodyMedium?.copyWith(color: moradoOscuro, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final motor = widget.motor;
     final tema = Theme.of(context);
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              const SizedBox(height: 16),
-              Image.asset('assets/logo.png', height: 44),
-              const SizedBox(height: 16),
-              Text(motor.nombreVendedor, style: tema.textTheme.titleLarge),
-              Text(motor.nombreEmpresa, style: tema.textTheme.bodyMedium),
-              const SizedBox(height: 24),
-              if (motor.bloqueoPin) ...[
-                const Icon(Icons.lock, size: 64),
-                const SizedBox(height: 12),
-                const Text('Demasiados intentos. Conéctese a internet para desbloquear, o pida al supervisor '
-                    'que le cambie el PIN.', textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: motor.sincronizando ? null : () => motor.sincronizar(),
-                  icon: const Icon(Icons.sync),
-                  label: Text(motor.sincronizando ? 'Conectando...' : 'Conectar'),
-                ),
-                if (motor.ultimoError != null) Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(motor.ultimoError!, textAlign: TextAlign.center),
-                ),
-              ] else ...[
-                Text('Escriba su PIN', style: tema.textTheme.titleMedium),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(
-                    6,
-                    (i) => Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Icon(i < _pin.length ? Icons.circle : Icons.circle_outlined, size: 18),
+      appBar: CabeceraOdai(
+        titulo: motor.nombreVendedor.isEmpty ? 'Odai Ruta' : motor.nombreVendedor,
+        subtitulo: motor.nombreEmpresa,
+        derecha: IndicadorSenal(motor: motor, claro: true),
+      ),
+      bottomNavigationBar: const PieOdai(),
+      body: LayoutBuilder(
+        builder: (context, medidas) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: medidas.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  Image.asset('assets/logo.png', height: 60),
+                  const SizedBox(height: 6),
+                  Text('Venta en Ruta', style: tema.textTheme.headlineSmall?.copyWith(color: const Color(0xFF222222))),
+                  const SizedBox(height: 14),
+                  _fraseCelebre(tema),
+                  const Spacer(),
+                  if (motor.bloqueoPin) ...[
+                    const Icon(Icons.lock, size: 64, color: moradoOdai),
+                    const SizedBox(height: 12),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 24),
+                      child: Text('Demasiados intentos. Conéctese a internet para desbloquear, o pida al supervisor '
+                          'que le cambie el PIN.', textAlign: TextAlign.center),
                     ),
-                  ),
-                ),
-                SizedBox(height: 24, child: _validando ? const LinearProgressIndicator() : Text(_mensaje ?? '')),
-                const Spacer(),
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  TextButton(onPressed: _solicitar, child: const Text('Olvidé mi PIN')),
-                  TextButton(
-                    onPressed: motor.sincronizando ? null : _conectar,
-                    child: Text(motor.sincronizando ? 'Conectando...' : 'Ya me dieron PIN'),
-                  ),
-                ]),
-                for (final fila in const [
-                  ['1', '2', '3'],
-                  ['4', '5', '6'],
-                  ['7', '8', '9'],
-                  ['<', '0', 'ok'],
-                ])
-                  Row(
-                    children: [
-                      for (final tecla in fila)
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.all(6),
-                            child: SizedBox(
-                              height: 64,
-                              child: tecla == 'ok'
-                                  ? FilledButton(onPressed: () => _tecla(tecla), child: const Icon(Icons.check))
-                                  : OutlinedButton(
-                                      onPressed: () => _tecla(tecla),
-                                      child: tecla == '<'
-                                          ? const Icon(Icons.backspace_outlined)
-                                          : Text(tecla, style: tema.textTheme.headlineSmall),
-                                    ),
-                            ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: motor.sincronizando ? null : () => motor.sincronizar(),
+                      icon: const Icon(Icons.sync),
+                      label: Text(motor.sincronizando ? 'Conectando...' : 'Conectar'),
+                    ),
+                    if (motor.ultimoError != null)
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(motor.ultimoError!, textAlign: TextAlign.center),
+                      ),
+                    const SizedBox(height: 24),
+                  ] else ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        6,
+                        (i) => Container(
+                          width: 26,
+                          height: 26,
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: i < _pin.length ? moradoOdai : Colors.white,
+                            border: Border.all(color: const Color(0xFF333333), width: 1.5),
                           ),
                         ),
-                    ],
-                  ),
-              ],
-            ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Escribe tu PIN', style: tema.textTheme.titleMedium),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
+                      child: _validando
+                          ? const LinearProgressIndicator(minHeight: 8)
+                          : BarraAvance(valor: _pin.length / 6, alto: 8),
+                    ),
+                    SizedBox(
+                      height: 22,
+                      child: Text(_mensaje ?? '', textAlign: TextAlign.center, style: TextStyle(color: tema.colorScheme.error)),
+                    ),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                      TextButton(onPressed: _solicitar, child: const Text('Olvidé mi PIN', style: TextStyle(fontSize: 16))),
+                      TextButton(
+                        onPressed: motor.sincronizando ? null : _conectar,
+                        child: Text(motor.sincronizando ? 'Conectando...' : 'Ya me dieron PIN',
+                            style: const TextStyle(fontSize: 16)),
+                      ),
+                    ]),
+                    _teclado(tema),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

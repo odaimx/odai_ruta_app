@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
@@ -17,7 +18,7 @@ import 'version.dart';
 const _claveEstado = 'estado';
 
 /// Partes de la bajada que se guardan tal cual. `null` en la respuesta significa "sin cambios".
-const partesBajada = ['jornadas', 'catalogo', 'listas', 'iva', 'visita_lista', 'facturas', 'motivos', 'marcas'];
+const partesBajada = ['jornadas', 'catalogo', 'listas', 'iva', 'visita_lista', 'facturas', 'motivos', 'frases', 'marcas'];
 
 /// Tipos que venden o cobran: necesitan permiso vigente para trabajar sin señal.
 const tiposDeVenta = {'pedido', 'anticipo', 'cobro'};
@@ -294,6 +295,15 @@ class Motor extends ChangeNotifier {
   }
 
   Future<Object?> dato(String clave) async => base?.leer(clave);
+
+  /// Una frase célebre o refrán al azar para la pantalla del PIN (bajan de Odoo y se ven sin señal).
+  Future<({String texto, String autor})?> fraseAlAzar([math.Random? azar]) async {
+    final frases = ((await dato('frases')) as List?)?.whereType<Map>().where((f) => '${f['texto'] ?? ''}'.trim().isNotEmpty).toList() ?? const [];
+    if (frases.isEmpty) return null;
+    final f = frases[(azar ?? math.Random()).nextInt(frases.length)];
+    final autor = '${f['autor'] ?? ''}'.trim();
+    return (texto: '${f['texto']}'.trim(), autor: autor.isEmpty ? 'Anónimo' : autor);
+  }
 
   // ---------------------------------------------------------------- sincronización
 

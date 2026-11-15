@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../actualizar.dart';
 import '../api.dart';
 import '../motor.dart';
+import '../tema.dart';
 import '../version.dart';
 
 /// Muestra el resultado de guardar algo en la cola.
@@ -95,34 +97,248 @@ class Miniatura extends StatelessWidget {
   }
 }
 
+/// Cabecera morada de todas las pantallas: el nombre grande en blanco y el logo de ODAI a la derecha.
+class CabeceraOdai extends StatelessWidget implements PreferredSizeWidget {
+  const CabeceraOdai({super.key, required this.titulo, this.subtitulo, this.derecha});
+
+  final String titulo;
+  final String? subtitulo;
+
+  /// Lo que va a la derecha en lugar del logo (por ejemplo, la señal en la pantalla del PIN).
+  final Widget? derecha;
+
+  @override
+  Size get preferredSize => Size.fromHeight(subtitulo == null ? 64 : 76);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      toolbarHeight: preferredSize.height,
+      titleSpacing: Navigator.canPop(context) ? 0 : 16,
+      title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(titulo, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700)),
+        ),
+        if (subtitulo != null && subtitulo!.isNotEmpty)
+          Text(subtitulo!,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500)),
+      ]),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 14),
+          child: derecha ?? Image.asset('assets/logo_blanco.png', height: 26, fit: BoxFit.contain),
+        ),
+      ],
+    );
+  }
+}
+
+/// Señal con Odoo: barras verdes "Online" si hubo comunicación hace poco; rojas "Offline" si no.
+class IndicadorSenal extends StatelessWidget {
+  const IndicadorSenal({super.key, required this.motor, this.claro = false});
+
+  final Motor motor;
+
+  /// Letra blanca (sobre la cabecera morada).
+  final bool claro;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: motor,
+      builder: (context, _) {
+        final enLinea = motor.conSenal;
+        final color = enLinea ? verdeOdai : const Color(0xFFE53935);
+        return Semantics(
+          label: enLinea ? 'Con señal' : 'Sin señal',
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.end, children: [
+              for (final alto in const [8.0, 13.0, 18.0, 24.0])
+                Container(
+                  width: 6,
+                  height: alto,
+                  margin: const EdgeInsets.only(left: 2.5),
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3)),
+                ),
+            ]),
+            const SizedBox(height: 2),
+            Text(enLinea ? 'Online' : 'Offline',
+                style: TextStyle(fontSize: 11, color: claro ? Colors.white : const Color(0xFF222222))),
+          ]),
+        );
+      },
+    );
+  }
+}
+
+/// Tarjeta con el marco morado de las maquetas.
+class TarjetaOdai extends StatelessWidget {
+  const TarjetaOdai({super.key, required this.child, this.onTap, this.padding = const EdgeInsets.all(12), this.margen});
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final EdgeInsets padding;
+  final EdgeInsets? margen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: margen ?? const EdgeInsets.symmetric(vertical: 6),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
+    );
+  }
+}
+
+/// Barra con degradado (morado o azul) para las tarjetas del inicio.
+class BarraAvance extends StatelessWidget {
+  const BarraAvance({super.key, required this.valor, this.azul = false, this.alto = 20});
+
+  /// De 0 a 1.
+  final double valor;
+  final bool azul;
+  final double alto;
+
+  @override
+  Widget build(BuildContext context) {
+    final colores = azul ? const [Color(0xFF3FA2F0), Color(0xFFBFE2FC)] : const [Color(0xFF8A64DE), Color(0xFFE3DAF7)];
+    final v = valor.isNaN ? 0.0 : valor.clamp(0.0, 1.0);
+    return Container(
+      height: alto,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: bordeMorado),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(3),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: v,
+            heightFactor: 1,
+            child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: colores))),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Buscador con la lupa a la derecha y, al lado, el botón para escanear un código de barras.
+class Buscador extends StatelessWidget {
+  const Buscador({super.key, required this.onChanged, this.onEscanear, this.hint = 'Buscar', this.controller});
+
+  final ValueChanged<String> onChanged;
+  final VoidCallback? onEscanear;
+  final String hint;
+  final TextEditingController? controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Expanded(
+        child: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: hint,
+            suffixIcon: const Icon(Icons.search, size: 28, color: Color(0xFF111111)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          ),
+          onChanged: onChanged,
+        ),
+      ),
+      if (onEscanear != null) ...[
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 50,
+          height: 50,
+          child: OutlinedButton(
+            key: const ValueKey('escanear'),
+            onPressed: onEscanear,
+            style: OutlinedButton.styleFrom(padding: EdgeInsets.zero, backgroundColor: Colors.white),
+            child: const Icon(Icons.qr_code_scanner, size: 30, color: Color(0xFF111111)),
+          ),
+        ),
+      ],
+    ]);
+  }
+}
+
+/// Lector de códigos de barras con la cámara: regresa el código leído.
+class Escaner extends StatefulWidget {
+  const Escaner({super.key, this.titulo = 'Escanear código'});
+
+  final String titulo;
+
+  @override
+  State<Escaner> createState() => _EscanerState();
+}
+
+class _EscanerState extends State<Escaner> {
+  final _camara = MobileScannerController();
+  bool _listo = false;
+
+  @override
+  void dispose() {
+    _camara.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.titulo)),
+      body: MobileScanner(
+        controller: _camara,
+        onDetect: (captura) {
+          final valor = captura.barcodes.firstOrNull?.rawValue;
+          if (valor != null && !_listo) {
+            _listo = true;
+            Navigator.pop(context, valor);
+          }
+        },
+      ),
+    );
+  }
+}
+
+Future<String?> escanear(BuildContext context, {String titulo = 'Escanear código'}) =>
+    Navigator.push<String>(context, MaterialPageRoute(builder: (_) => Escaner(titulo: titulo)));
+
 /// Pie de pantalla con los datos de propiedad de ODAI y la versión instalada.
 class PieOdai extends StatelessWidget {
   const PieOdai({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final estilo = Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600);
-    return SafeArea(
-      top: false,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Text('Derechos reservados © ODAI  |  ', style: estilo),
-            InkWell(
-              onTap: () => abrirEnNavegador('https://www.odai.lat'),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text('www.odai.lat',
-                    style: estilo?.copyWith(
-                        color: Theme.of(context).colorScheme.primary, decoration: TextDecoration.underline)),
+    const estilo = TextStyle(fontSize: 13, color: Color(0xFF222222));
+    return Container(
+      color: fondoOdai,
+      child: SafeArea(
+        top: false,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Divider(height: 2, thickness: 2, color: moradoCabecera),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              const Text('Derechos reservados © ODAI | ', style: estilo),
+              InkWell(
+                onTap: () => abrirEnNavegador('https://www.odai.lat'),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Text('www.odai.lat',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF1A3FD1), decoration: TextDecoration.underline)),
+                ),
               ),
-            ),
-            Text('  |  Versión $appVersion', style: estilo),
-          ]),
-        ),
-      ]),
+              const Text(' | V. $appVersion', style: estilo),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -137,26 +353,28 @@ class Accion {
   final bool principal;
 }
 
-/// Barra de acciones debajo del título, igual en todas las pantallas: a la izquierda el menú "⋮ Acciones" con las
-/// demás opciones y al lado la acción más importante de la pantalla. Así nunca se pasa del ancho del celular.
+/// Barra de acciones debajo de la cabecera, igual en todas las pantallas: a la izquierda el menú ⋮ con las demás
+/// opciones, al lado la acción más importante de la pantalla y a la derecha la señal. Así nunca se pasa del ancho
+/// del celular. ``centro`` pone algo en medio (en el pedido: disponible y por cobrar del cliente).
 class BarraAcciones extends StatelessWidget {
-  const BarraAcciones({super.key, required this.acciones});
+  const BarraAcciones({super.key, required this.acciones, this.motor, this.centro});
 
   final List<Accion> acciones;
+  final Motor? motor;
+  final Widget? centro;
 
   @override
   Widget build(BuildContext context) {
-    if (acciones.isEmpty) return const SizedBox.shrink();
-    const alto = Size(0, 44);
+    const alto = Size(0, 46);
     final principal = acciones.where((a) => a.principal).firstOrNull;
     final resto = acciones.where((a) => a != principal).toList();
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Colors.grey.shade400)),
+      decoration: const BoxDecoration(
+        color: fondoOdai,
+        border: Border(bottom: BorderSide(color: moradoCabecera, width: 2)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
       child: Row(children: [
         if (resto.isNotEmpty)
           MenuAnchor(
@@ -164,36 +382,42 @@ class BarraAcciones extends StatelessWidget {
               for (final a in resto)
                 MenuItemButton(
                   key: ValueKey('accion_${a.texto}'),
-                  leadingIcon: Icon(a.icono),
+                  leadingIcon: Icon(a.icono, color: moradoOscuro),
                   onPressed: a.onPressed,
-                  child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(a.texto)),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(a.texto, style: const TextStyle(fontSize: 16)),
+                  ),
                 ),
             ],
-            builder: (context, menu, _) => OutlinedButton.icon(
+            builder: (context, menu, _) => IconButton(
               key: const ValueKey('acciones'),
+              tooltip: 'Acciones',
               onPressed: () => menu.isOpen ? menu.close() : menu.open(),
-              style: OutlinedButton.styleFrom(minimumSize: alto),
-              icon: const Icon(Icons.more_vert, size: 20),
-              label: const Text('Acciones'),
+              icon: const Icon(Icons.more_vert, size: 32, color: Color(0xFF111111)),
             ),
-          ),
-        if (resto.isNotEmpty && principal != null) const SizedBox(width: 8),
+          )
+        else
+          const SizedBox(width: 8),
         if (principal != null)
-          Flexible(
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 230),
             child: FilledButton.icon(
               key: ValueKey('accion_${principal.texto}'),
               onPressed: principal.onPressed,
-              style: FilledButton.styleFrom(minimumSize: alto),
-              icon: Icon(principal.icono, size: 20),
+              style: FilledButton.styleFrom(minimumSize: alto, backgroundColor: moradoCabecera),
+              icon: Icon(principal.icono, size: 22),
               label: Text(principal.texto, overflow: TextOverflow.ellipsis),
             ),
           ),
+        Expanded(child: centro == null ? const SizedBox.shrink() : Align(alignment: Alignment.centerRight, child: centro)),
+        if (motor != null) ...[const SizedBox(width: 10), IndicadorSenal(motor: motor!)],
       ]),
     );
   }
 }
 
-/// Filtros como las facetas de Odoo: uno elegido, resaltado.
+/// Filtros como cajas, igual de anchas: la elegida con relleno lavanda.
 class Filtros<T> extends StatelessWidget {
   const Filtros({super.key, required this.opciones, required this.elegido, required this.onChanged});
 
@@ -203,22 +427,27 @@ class Filtros<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tema = Theme.of(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(children: [
         for (final (i, o) in opciones.indexed) ...[
           if (i > 0) const SizedBox(width: 8),
-          ChoiceChip(
-            label: Text(o.$2),
-            selected: o.$1 == elegido,
-            showCheckmark: false,
-            selectedColor: tema.colorScheme.secondary.withValues(alpha: 0.18),
-            side: BorderSide(color: o.$1 == elegido ? tema.colorScheme.secondary : Colors.grey.shade500),
-            labelStyle: TextStyle(
-                color: const Color(0xFF111111), fontWeight: o.$1 == elegido ? FontWeight.w700 : FontWeight.w500),
-            onSelected: (_) => onChanged(o.$1),
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => onChanged(o.$1),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: o.$1 == elegido ? lavanda : Colors.white,
+                minimumSize: const Size(0, 46),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+              ),
+              child: FittedBox(
+                child: Text(o.$2,
+                    style: TextStyle(
+                        fontSize: 16,
+                        color: const Color(0xFF111111),
+                        fontWeight: o.$1 == elegido ? FontWeight.w700 : FontWeight.w500)),
+              ),
+            ),
           ),
         ],
       ]),

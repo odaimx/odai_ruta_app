@@ -3,8 +3,9 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../api.dart';
 import '../motor.dart';
+import 'comun.dart';
 
-/// Primer uso: el vendedor escanea el QR que el supervisor muestra en Odoo (Venta en ruta › Celulares).
+/// Primer uso: el vendedor escanea el QR que el supervisor muestra en Odoo (Venta en ruta › Configuración › Celulares).
 class PantallaEmparejar extends StatefulWidget {
   const PantallaEmparejar({super.key, required this.motor});
 
@@ -53,7 +54,7 @@ class _PantallaEmparejarState extends State<PantallaEmparejar> {
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Odai Ruta')),
+      appBar: const CabeceraOdai(titulo: 'Odai Ruta'),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -64,7 +65,7 @@ class _PantallaEmparejarState extends State<PantallaEmparejar> {
               const SizedBox(height: 16),
               Text('Conectar este celular', style: tema.textTheme.headlineSmall),
               const SizedBox(height: 8),
-              const Text('Pida a su supervisor el código QR del celular (en Odoo: Venta en ruta › Celulares) '
+              const Text('Pida a su supervisor el código QR del celular (en Odoo: Venta en ruta › Configuración › Celulares) '
                   'y escanéelo. El código sirve una sola vez y vence en 15 minutos.'),
               const SizedBox(height: 16),
               if (_error != null)

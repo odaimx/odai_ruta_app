@@ -106,4 +106,44 @@ void main() {
     ruta = await Ruta.cargar(motor);
     expect(ruta.enCola(ruta.visita(3, provisional)!), isTrue);
   });
+
+  test('para pedir factura: faltan datos fiscales hasta que se completan en el celular', () async {
+    await motor.base!.escribirVarios({
+      'jornadas': [
+        {
+          'jornada': {'id': 3, 'ruta': 'Ruta Norte', 'state': 'abierta'},
+          'config': {
+            'catalogos_fiscales': {
+              'regimen': [{'id': 1, 'name': '612-Personas Físicas'}],
+              'uso': [{'id': 2, 'name': 'G03-Gastos en general'}],
+            },
+          },
+          'visitas': [
+            {'id': 10, 'cliente': 'Lupita', 'estado': 'pendiente', 'fiscal': {'rfc': 'XAXX010101000', 'cp': ''}},
+          ],
+        }
+      ],
+    });
+    var ruta = await Ruta.cargar(motor);
+    expect(ruta.faltanFiscales(3, ruta.visita(3, 10)!), ['RFC', 'código postal', 'régimen fiscal', 'uso del CFDI']);
+    await motor.cola!.agregar('cliente', {
+      'visita_id': 10,
+      'contacto': {'cp': '44100'},
+      'fiscal': {'rfc': 'LUPA800101AB1', 'cp': '44100', 'regimen': 1, 'uso': 2},
+    });
+    ruta = await Ruta.cargar(motor);
+    expect(ruta.faltanFiscales(3, ruta.visita(3, 10)!), isEmpty);
+  });
+
+  test('frase al azar para la pantalla del PIN, Anónimo sin autor', () async {
+    expect(await motor.fraseAlAzar(), isNull);
+    await motor.base!.escribirVarios({
+      'frases': [
+        {'texto': 'Querer es poder.', 'autor': ''},
+      ],
+    });
+    final f = await motor.fraseAlAzar();
+    expect(f?.texto, 'Querer es poder.');
+    expect(f?.autor, 'Anónimo');
+  });
 }

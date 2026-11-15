@@ -3,6 +3,9 @@ import 'dart:math' as math;
 import 'base_local.dart';
 import 'motor.dart';
 
+/// RFC de público en general y de extranjeros: no sirven para facturar a nombre del cliente.
+const rfcGenericos = {'XAXX010101000', 'XEXX010101000'};
+
 double _num(Object? v) => v is num ? v.toDouble() : double.tryParse('$v') ?? 0.0;
 
 /// Formato de dinero con la moneda de la empresa.
@@ -265,6 +268,26 @@ class Ruta {
       sinVenta: estados.where((e) => e == 'sin_venta').length,
     );
   }
+
+  /// Lo que le falta al cliente para facturarle a su nombre (vacío: puede pedir factura). Cuenta lo que se
+  /// modificó en el celular y aún espera en la cola. Régimen y uso solo se piden si Odoo los maneja.
+  List<String> faltanFiscales(int jornadaId, Map visita) {
+    final fiscal = (visita['fiscal'] as Map?) ?? const {};
+    final contacto = (visita['contacto'] as Map?) ?? const {};
+    final catalogos = (config(jornadaId)['catalogos_fiscales'] as Map?) ?? const {};
+    final rfc = '${fiscal['rfc'] ?? ''}'.trim().toUpperCase();
+    final cp = '${fiscal['cp'] is String && (fiscal['cp'] as String).isNotEmpty ? fiscal['cp'] : contacto['cp'] ?? ''}'.trim();
+    bool usa(String clave) => ((catalogos[clave] as List?) ?? const []).isNotEmpty;
+    return [
+      if (rfc.isEmpty || rfcGenericos.contains(rfc)) 'RFC',
+      if (cp.isEmpty) 'código postal',
+      if (usa('regimen') && fiscal['regimen'] is! int) 'régimen fiscal',
+      if (usa('uso') && fiscal['uso'] is! int) 'uso del CFDI',
+    ];
+  }
+
+  /// Datos de las tarjetas del inicio que manda Odoo: meta de la ruta y las últimas jornadas.
+  Map tableroOdoo(int jornadaId) => (jornada(jornadaId)?['tablero'] as Map?) ?? const {};
 
   /// Lo pedido sin señal que todavía no llega a Odoo (cuenta contra el crédito disponible).
   double pedidoEnCola(int visitaId) =>
