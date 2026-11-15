@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -204,23 +206,22 @@ class BarraAvance extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colores = azul ? const [Color(0xFF3FA2F0), Color(0xFFBFE2FC)] : const [Color(0xFF8A64DE), Color(0xFFE3DAF7)];
+    final color = azul ? azulOdai : moradoOdai;
     final v = valor.isNaN ? 0.0 : valor.clamp(0.0, 1.0);
     return Container(
       height: alto,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: lavanda,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: bordeMorado),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(4),
         child: Align(
           alignment: Alignment.centerLeft,
           child: FractionallySizedBox(
             widthFactor: v,
             heightFactor: 1,
-            child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: colores))),
+            child: ColoredBox(color: color),
           ),
         ),
       ),
@@ -405,7 +406,7 @@ class BarraAcciones extends StatelessWidget {
             child: FilledButton.icon(
               key: ValueKey('accion_${principal.texto}'),
               onPressed: principal.onPressed,
-              style: FilledButton.styleFrom(minimumSize: alto, backgroundColor: moradoCabecera),
+              style: FilledButton.styleFrom(minimumSize: alto, backgroundColor: moradoOdai),
               icon: Icon(principal.icono, size: 22),
               label: Text(principal.texto, overflow: TextOverflow.ellipsis),
             ),
@@ -453,4 +454,93 @@ class Filtros<T> extends StatelessWidget {
       ]),
     );
   }
+}
+
+
+/// Billetes con los que suele pagar el cliente: con 145 se sugiere 150, 200, 500 y 1,000.
+List<double> montosSugeridos(double total) {
+  if (total <= 0) return const [];
+  final r = <double>{};
+  for (final b in const [50, 100, 200, 500, 1000]) {
+    final v = (total / b).ceil() * b.toDouble();
+    if (v > total + 0.004) r.add(v);
+  }
+  return (r.toList()..sort()).take(4).toList();
+}
+
+/// Captura rápida de lo que entrega el cliente: Exacto, los billetes sugeridos y Manual (escribir la cantidad).
+class MontosRapidos extends StatelessWidget {
+  const MontosRapidos({super.key, required this.total, required this.moneda, required this.onElegir, this.onManual});
+
+  final double total;
+  final String Function(num) moneda;
+  final ValueChanged<double> onElegir;
+  final VoidCallback? onManual;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget boton(String texto, VoidCallback onTap, {Key? key}) => OutlinedButton(
+          key: key,
+          onPressed: onTap,
+          style: OutlinedButton.styleFrom(
+              backgroundColor: lavanda, minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 12)),
+          child: Text(texto, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        );
+    String redondo(num v) => moneda(v).replaceAll(RegExp(r'\.00$'), '');
+    return Wrap(spacing: 8, runSpacing: 8, children: [
+      boton('Exacto', () => onElegir(total), key: const ValueKey('monto_exacto')),
+      for (final m in montosSugeridos(total)) boton(redondo(m), () => onElegir(m), key: ValueKey('monto_${m.toInt()}')),
+      if (onManual != null) boton('Manual', onManual!, key: const ValueKey('monto_manual')),
+    ]);
+  }
+}
+
+/// Anillo de avance (estilo tablero BI): el porcentaje en medio.
+class Anillo extends StatelessWidget {
+  const Anillo({super.key, required this.valor, this.color = moradoOdai, this.lado = 84, this.centro});
+
+  final double valor;
+  final Color color;
+  final double lado;
+  final Widget? centro;
+
+  @override
+  Widget build(BuildContext context) {
+    final v = valor.isNaN ? 0.0 : valor.clamp(0.0, 1.0);
+    return SizedBox(
+      width: lado,
+      height: lado,
+      child: CustomPaint(
+        painter: _PintorAnillo(v, color),
+        child: Center(
+          child: centro ??
+              Text('${(v * 100).round()}%',
+                  style: TextStyle(fontSize: lado * 0.22, fontWeight: FontWeight.w800, color: const Color(0xFF111111))),
+        ),
+      ),
+    );
+  }
+}
+
+class _PintorAnillo extends CustomPainter {
+  _PintorAnillo(this.valor, this.color);
+
+  final double valor;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final grueso = size.width * 0.12;
+    final rect = Offset.zero & size;
+    final area = rect.deflate(grueso / 2);
+    canvas.drawArc(area, 0, 2 * math.pi, false,
+        Paint()..style = PaintingStyle.stroke..strokeWidth = grueso..color = lavanda);
+    if (valor > 0) {
+      canvas.drawArc(area, -math.pi / 2, 2 * math.pi * valor, false,
+          Paint()..style = PaintingStyle.stroke..strokeWidth = grueso..strokeCap = StrokeCap.round..color = color);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PintorAnillo old) => old.valor != valor || old.color != color;
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../actualizar.dart';
@@ -176,7 +178,7 @@ class _TarjetaSync extends StatelessWidget {
   }
 }
 
-/// Las cuatro tarjetas del inicio: proyección (meta de la oficina), visitas, ruta actual y últimas rutas.
+/// Tablero del inicio, estilo BI: proyección (meta de la oficina), visitas, ruta actual y últimas rutas.
 class _Tablero extends StatelessWidget {
   const _Tablero({required this.ruta, required this.jornadaId});
 
@@ -194,100 +196,140 @@ class _Tablero extends StatelessWidget {
     final meses = (odoo['meses'] as num?)?.toInt() ?? 0;
     // Lo vendido en el periodo de la meta más lo de hoy que aún espera en el celular.
     final ejecutado = ((odoo['ejecutado'] as num?)?.toDouble() ?? 0) + (hoy.vendido - monto);
-    final ultimas = ((odoo['ultimas'] as List?) ?? const []).whereType<Map>().toList().reversed.toList();
-    final titulo = tema.textTheme.titleLarge?.copyWith(color: moradoOdai, fontWeight: FontWeight.w500);
-    final etiqueta = tema.textTheme.bodyMedium;
+    final ultimas = ((odoo['ultimas'] as List?) ?? const []).whereType<Map>().toList();
+    String corto(num v) => moneda(v).replaceAll(RegExp(r'\.00$'), '');
 
-    Widget tarjeta(Widget hijo) => Expanded(child: TarjetaOdai(margen: const EdgeInsets.all(4), child: hijo));
-    Widget barra(String texto, double valor, String cantidad, {bool azul = false}) => Padding(
-          padding: const EdgeInsets.only(top: 6),
+    final titulo = tema.textTheme.titleMedium?.copyWith(color: moradoOscuro, fontWeight: FontWeight.w700);
+    const gris = TextStyle(fontSize: 13, color: Color(0xFF555555));
+    const cifra = TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF111111));
+
+    Widget tarjeta(Widget hijo, {Key? key}) =>
+        TarjetaOdai(key: key, margen: const EdgeInsets.all(4), padding: const EdgeInsets.all(12), child: hijo);
+    Widget dato(String etiqueta, String valor, {Color? color}) => Padding(
+          padding: const EdgeInsets.only(bottom: 4),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Expanded(child: Text(texto, style: etiqueta, overflow: TextOverflow.ellipsis)),
-              Text(cantidad, style: tema.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
-            ]),
-            const SizedBox(height: 2),
-            BarraAvance(valor: valor, azul: azul),
+            Text(etiqueta, style: gris),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(valor, style: cifra.copyWith(color: color)),
+            ),
           ]),
         );
 
-    final proyeccion = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Proyección', style: titulo),
-      if (meta <= 0)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text('La oficina aún no pone meta a esta ruta.\nVendido en el periodo: ${moneda(ejecutado)}',
-              style: etiqueta),
-        )
-      else ...[
-        barra('Meta a $meses ${meses == 1 ? 'mes' : 'meses'}', 1, moneda(meta)),
-        barra('Ejecutado', ejecutado / meta, moneda(ejecutado), azul: true),
-      ],
-    ]);
-    final visitas = Column(children: [
-      Text('Visitas', style: titulo),
-      const SizedBox(height: 4),
-      Text('${hoy.hechas}/${hoy.visitas}', style: tema.textTheme.headlineSmall),
-      Text('${hoy.conPedido} Con pedido - ${hoy.sinVenta} Sin venta', textAlign: TextAlign.center, style: etiqueta),
-      Text(hoy.pendientes == 0 ? 'Ruta completa' : '${hoy.pendientes} por visitar', style: etiqueta),
-      const SizedBox(height: 6),
-      BarraAvance(valor: hoy.visitas == 0 ? 0 : hoy.hechas / hoy.visitas, alto: 8),
-    ]);
-    final actual = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Ruta actual', style: titulo),
-      barra('Vendido', hoy.vendido > 0 ? 1 : 0, moneda(hoy.vendido)),
-      barra('Cobrado', hoy.vendido > 0 ? hoy.cobrado / hoy.vendido : (hoy.cobrado > 0 ? 1 : 0), moneda(hoy.cobrado),
-          azul: true),
-    ]);
+    final avanceMeta = meta > 0 ? ejecutado / meta : 0.0;
+    final proyeccion = tarjeta(
+      key: const ValueKey('tablero_proyeccion'),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Proyección', style: titulo),
+        Text(meta > 0 ? 'Meta a $meses ${meses == 1 ? 'mes' : 'meses'}' : 'Sin meta de la oficina', style: gris),
+        const SizedBox(height: 8),
+        Center(child: Anillo(valor: avanceMeta, color: avanceMeta >= 1 ? verdeOdai : moradoOdai)),
+        const SizedBox(height: 8),
+        if (meta > 0) dato('Meta', corto(meta)),
+        dato('Ejecutado', corto(ejecutado), color: moradoOdai),
+        if (meta > 0 && ejecutado < meta) dato('Falta', corto(meta - ejecutado)),
+      ]),
+    );
+
+    final efectividad = hoy.hechas == 0 ? 0 : (100 * hoy.conPedido / hoy.hechas).round();
+    final visitas = tarjeta(
+      key: const ValueKey('tablero_visitas'),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Visitas', style: titulo),
+        Text(hoy.pendientes == 0 ? 'Ruta completa' : '${hoy.pendientes} por visitar', style: gris),
+        const SizedBox(height: 8),
+        Center(
+          child: Anillo(
+            valor: hoy.visitas == 0 ? 0 : hoy.hechas / hoy.visitas,
+            centro: Text('${hoy.hechas}/${hoy.visitas}', style: cifra),
+          ),
+        ),
+        const SizedBox(height: 8),
+        dato('Con pedido', '${hoy.conPedido}', color: verdeOdai),
+        dato('Sin venta', '${hoy.sinVenta}', color: const Color(0xFFE53935)),
+        dato('Efectividad', '$efectividad%'),
+      ]),
+    );
+
+    final cobrado = hoy.vendido > 0 ? hoy.cobrado / hoy.vendido : 0.0;
+    final actual = tarjeta(
+      key: const ValueKey('tablero_actual'),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Ruta actual', style: titulo),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(child: dato('Vendido', moneda(hoy.vendido), color: moradoOdai)),
+          Expanded(child: dato('Cobrado', moneda(hoy.cobrado), color: azulOdai)),
+          Expanded(child: dato('Por cobrar', moneda(math.max(0, hoy.vendido - hoy.cobrado)))),
+        ]),
+        const SizedBox(height: 4),
+        Row(children: [
+          Expanded(child: BarraAvance(valor: cobrado, azul: true, alto: 12)),
+          const SizedBox(width: 8),
+          Text('${(cobrado * 100).round()}% cobrado', style: gris),
+        ]),
+      ]),
+    );
+
+    // Últimas rutas: barras horizontales con el importe a un lado, de la más antigua a la de hoy.
     final barras = [
-      for (final (i, u) in ultimas.indexed)
-        (etiqueta: (ultimas.length - i).toString().padLeft(2, '0'), monto: (u['monto'] as num?)?.toDouble() ?? 0, actual: false),
-      (etiqueta: 'AC', monto: hoy.vendido, actual: true),
+      for (final (i, u) in ultimas.reversed.indexed)
+        (etiqueta: (ultimas.length - i).toString().padLeft(2, '0'), monto: (u['monto'] as num?)?.toDouble() ?? 0, hoy: false),
+      (etiqueta: 'Hoy', monto: hoy.vendido, hoy: true),
     ];
     final maximo = barras.fold(0.0, (m, b) => b.monto > m ? b.monto : m);
-    final historial = Column(children: [
-      Text('Últimas rutas', style: titulo),
-      const SizedBox(height: 6),
-      SizedBox(
-        height: 110,
-        child: Row(crossAxisAlignment: CrossAxisAlignment.end, mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          for (final b in barras)
-            Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-              Container(
-                width: 22,
-                height: 14 + 72 * (maximo <= 0 ? 0 : b.monto / maximo),
-                alignment: Alignment.bottomCenter,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: bordeMorado),
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: b.actual
-                        ? const [Color(0xFF5DB33C), Color(0xFFC9EBB8)]
-                        : const [Color(0xFF3FA2F0), Color(0xFFDDF0FE)],
-                  ),
-                ),
-                child: RotatedBox(
-                  quarterTurns: 3,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(moneda(b.monto).replaceAll(moneda.simbolo, ''),
-                        style: const TextStyle(fontSize: 10, color: Color(0xFF111111))),
+    final promedio = ultimas.isEmpty ? null : ultimas.fold(0.0, (t, u) => t + ((u['monto'] as num?)?.toDouble() ?? 0)) / ultimas.length;
+    final historial = tarjeta(
+      key: const ValueKey('tablero_ultimas'),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Últimas rutas', style: titulo),
+        if (promedio != null) Text('Promedio ${moneda(promedio)}', style: gris),
+        const SizedBox(height: 8),
+        for (final b in barras)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              SizedBox(width: 36, child: Text(b.etiqueta, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: maximo <= 0 ? 0.02 : math.max(0.02, b.monto / maximo),
+                    child: Container(
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: b.hoy ? verdeOdai : azulOdai,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(b.etiqueta, style: const TextStyle(fontSize: 12)),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 104,
+                child: Text(moneda(b.monto),
+                    key: ValueKey('ultima_${b.etiqueta}'),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              ),
             ]),
-        ]),
-      ),
-    ]);
+          ),
+      ]),
+    );
+
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Column(children: [
-        IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [tarjeta(proyeccion), tarjeta(visitas)])),
-        IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [tarjeta(actual), tarjeta(historial)])),
+        IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: proyeccion),
+            Expanded(child: visitas),
+          ]),
+        ),
+        actual,
+        historial,
       ]),
     );
   }

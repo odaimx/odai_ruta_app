@@ -170,6 +170,12 @@ void main() {
     await motor.sincronizar();
     expect((odoo.ultimaBajada!['desde'] as Map)['catalogo'], 'm1');
     expect((await motor.dato('catalogo')) as List, hasLength(2));
+    // Una marca sin su dato (la app anterior recibía las frases pero no las guardaba) no se manda: Odoo las
+    // vuelve a enviar.
+    await motor.base!.escribir('marcas', {'catalogo': 'm1', 'precios': 'p1', 'frases': 'f1'});
+    await motor.sincronizar();
+    expect((odoo.ultimaBajada!['desde'] as Map).containsKey('frases'), isFalse);
+    expect((odoo.ultimaBajada!['desde'] as Map)['catalogo'], 'm1');
   });
 
   test('cinco PIN equivocados bloquean hasta tener señal', () async {

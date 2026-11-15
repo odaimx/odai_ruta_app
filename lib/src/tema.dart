@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 
 /// Colores de Odai: el morado de las maquetas y sus tonos, con el azul del logo como segundo color.
-const moradoCabecera = Color(0xFF927DB9);
+const moradoCabecera = Color(0xFF8569BE);
 /// Botones y acentos: un tono más fuerte que la cabecera para que el texto blanco se lea con sol.
-const moradoOdai = Color(0xFF7B63AE);
-const moradoOscuro = Color(0xFF4E3A7A);
+const moradoOdai = Color(0xFF6A4BA8);
+const moradoOscuro = Color(0xFF45306F);
 /// Marcos de tarjetas, buscador y filtros.
-const bordeMorado = Color(0xFF9A8AC8);
+const bordeMorado = Color(0xFF8E7BC6);
 /// Relleno suave: filtro elegido, unidades y botón de agregar.
-const lavanda = Color(0xFFE6E0F5);
+const lavanda = Color(0xFFE3DAF5);
 /// Fondo de las pantallas.
 const fondoOdai = Color(0xFFF7F5FA);
-const azulOdai = Color(0xFF54AAF6);
-const verdeOdai = Color(0xFF6CC04A);
+const azulOdai = Color(0xFF2F8FE0);
+const verdeOdai = Color(0xFF43A047);
 /// Compatibilidad: algunos marcos usan el gris oscuro.
 const bordeOdai = Color(0xFF616161);
 const azulMarino = moradoOscuro;

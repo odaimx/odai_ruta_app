@@ -22,6 +22,8 @@ class _PantallaCobroState extends State<PantallaCobro> {
   final _elegidas = <int>{};
   final _monto = TextEditingController();
   final _referencia = TextEditingController();
+  final _recibido = TextEditingController();
+  final _manual = FocusNode();
   int? _diario;
   bool _guardando = false;
 
@@ -45,6 +47,8 @@ class _PantallaCobroState extends State<PantallaCobro> {
   @override
   void dispose() {
     _monto.dispose();
+    _recibido.dispose();
+    _manual.dispose();
     _referencia.dispose();
     super.dispose();
   }
@@ -142,16 +146,20 @@ class _PantallaCobroState extends State<PantallaCobro> {
               child: Text('No hay formas de cobro configuradas en Odoo (Ajustes › Venta en ruta).',
                   style: TextStyle(color: Colors.red)),
             ),
-          if (diarios.length > 1)
+          if (diarios.length > 1) ...[
+            const SizedBox(height: 16),
             DropdownButtonFormField<int>(
               initialValue: _diario,
               decoration: const InputDecoration(labelText: 'Forma de pago'),
               items: [for (final d in diarios) DropdownMenuItem(value: d['id'] as int, child: Text('${d['name']}'))],
               onChanged: (x) => setState(() => _diario = x),
             ),
+          ],
+          const SizedBox(height: 16),
           TextField(
             controller: _monto,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               labelText: 'Monto cobrado',
               suffixIcon: TextButton(
@@ -160,9 +168,43 @@ class _PantallaCobroState extends State<PantallaCobro> {
               ),
             ),
           ),
-          if (esTransferencia)
+          if (esTransferencia) ...[
+            const SizedBox(height: 16),
             TextField(controller: _referencia, decoration: const InputDecoration(labelText: 'Referencia de la transferencia')),
-          const SizedBox(height: 12),
+          ] else if ((double.tryParse(_monto.text.replaceAll(',', '')) ?? 0) > 0) ...[
+            // Efectivo: con cuánto paga y su cambio, con los billetes más comunes para capturar rápido.
+            const SizedBox(height: 16),
+            const Text('¿Con cuánto paga?'),
+            const SizedBox(height: 8),
+            MontosRapidos(
+              total: double.tryParse(_monto.text.replaceAll(',', '')) ?? 0,
+              moneda: moneda.call,
+              onElegir: (m) => setState(() => _recibido.text = m.toStringAsFixed(2)),
+              onManual: () => setState(() {
+                _recibido.clear();
+                _manual.requestFocus();
+              }),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _recibido,
+              focusNode: _manual,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Recibido (para el cambio)'),
+              onChanged: (_) => setState(() {}),
+            ),
+            if ((double.tryParse(_recibido.text.replaceAll(',', '')) ?? 0) > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Builder(builder: (_) {
+                  final cambio = (double.tryParse(_recibido.text.replaceAll(',', '')) ?? 0) -
+                      (double.tryParse(_monto.text.replaceAll(',', '')) ?? 0);
+                  return Text(cambio >= 0 ? 'Cambio ${moneda(cambio)}' : 'Faltan ${moneda(-cambio)}',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700));
+                }),
+              ),
+          ],
+          const SizedBox(height: 16),
           BotonGrande(
             icono: Icons.check,
             texto: 'Registrar cobro',

@@ -72,10 +72,22 @@ class _PantallaPinState extends State<PantallaPin> {
   @override
   void initState() {
     super.initState();
-    // Una frase distinta cada vez que se muestra la pantalla del PIN.
-    widget.motor.fraseAlAzar().then((f) {
-      if (mounted) setState(() => _frase = f);
-    });
+    // Una frase distinta cada vez que se muestra la pantalla del PIN. Si aún no hay (la app recién instalada o
+    // actualizada abre el PIN mientras sincroniza), se vuelve a buscar en cuanto termina la sincronización.
+    widget.motor.addListener(_buscarFrase);
+    _buscarFrase();
+  }
+
+  @override
+  void dispose() {
+    widget.motor.removeListener(_buscarFrase);
+    super.dispose();
+  }
+
+  Future<void> _buscarFrase() async {
+    if (_frase != null) return;
+    final f = await widget.motor.fraseAlAzar();
+    if (mounted && f != null && _frase == null) setState(() => _frase = f);
   }
 
   Widget _teclado(ThemeData tema) {

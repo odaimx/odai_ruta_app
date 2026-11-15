@@ -378,7 +378,10 @@ class _PantallaPedidoState extends State<PantallaPedido> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('De contado'),
-                  subtitle: aCredito ? null : const Text('Este cliente no tiene crédito'),
+                  subtitle: Text([
+                    if (!aCredito) 'Este cliente no tiene crédito',
+                    if (_contado && ruta.config(widget.jornadaId)['tipo_ruta'] == 'preventa') 'Preventa: lo cobra el chofer al entregar',
+                  ].join('. ')),
                   value: _contado,
                   onChanged: aCredito ? (x) => cambiar(() => _contado = x) : null,
                 ),
@@ -520,6 +523,7 @@ class _CobroAlVender extends StatefulWidget {
 class _CobroAlVenderState extends State<_CobroAlVender> {
   final _recibido = TextEditingController();
   final _referencia = TextEditingController();
+  final _manual = FocusNode();
   int? _diario;
 
   List<Map> get _diarios => ((widget.config['diarios'] as List?) ?? const []).whereType<Map>().toList();
@@ -538,6 +542,7 @@ class _CobroAlVenderState extends State<_CobroAlVender> {
   void dispose() {
     _recibido.dispose();
     _referencia.dispose();
+    _manual.dispose();
     super.dispose();
   }
 
@@ -578,36 +583,49 @@ class _CobroAlVenderState extends State<_CobroAlVender> {
       title: Text('Total ${widget.moneda(widget.total)}'),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (_registra && _diarios.length > 1)
+          if (_registra && _diarios.length > 1) ...[
+            const SizedBox(height: 8),
             DropdownButtonFormField<int>(
               initialValue: _diario,
               decoration: const InputDecoration(labelText: 'Forma de pago'),
               items: [for (final d in _diarios) DropdownMenuItem(value: d['id'] as int, child: Text('${d['name']}'))],
               onChanged: (x) => setState(() => _diario = x),
             ),
+            const SizedBox(height: 16),
+          ],
           if (_registra && _diarios.isEmpty)
             const Text('No hay formas de cobro configuradas en Odoo (Ajustes › Venta en ruta).',
                 style: TextStyle(color: Colors.red)),
-          if (!_esTransferencia)
+          if (!_esTransferencia) ...[
+            const Align(alignment: Alignment.centerLeft, child: Text('¿Con cuánto paga?')),
+            const SizedBox(height: 8),
+            MontosRapidos(
+              total: widget.total,
+              moneda: widget.moneda.call,
+              onElegir: (m) => setState(() => _recibido.text = m.toStringAsFixed(2)),
+              onManual: () => setState(() {
+                _recibido.clear();
+                _manual.requestFocus();
+              }),
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: _recibido,
+              focusNode: _manual,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Recibido',
-                suffixIcon: TextButton(
-                  onPressed: () => setState(() => _recibido.text = widget.total.toStringAsFixed(2)),
-                  child: const Text('Exacto'),
-                ),
-              ),
+              decoration: const InputDecoration(labelText: 'Recibido'),
               onChanged: (_) => setState(() {}),
             ),
+          ],
           if (!_esTransferencia && recibido > 0)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(cambio >= 0 ? 'Cambio ${widget.moneda(cambio)}' : 'Faltan ${widget.moneda(-cambio)}'),
             ),
-          if (_registra && _esTransferencia)
+          if (_registra && _esTransferencia) ...[
+            const SizedBox(height: 16),
             TextField(controller: _referencia, decoration: const InputDecoration(labelText: 'Referencia de la transferencia')),
+          ],
         ]),
       ),
       actions: [

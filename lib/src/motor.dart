@@ -423,7 +423,14 @@ class Motor extends ChangeNotifier {
   }
 
   Future<void> _bajar(bool completo) async {
-    final marcas = completo ? <String, Object?>{} : ((await base!.leer('marcas')) as Map?)?.cast<String, Object?>() ?? {};
+    final marcas = completo
+        ? <String, Object?>{}
+        : Map<String, Object?>.from(((await base!.leer('marcas')) as Map?)?.cast<String, Object?>() ?? {});
+    // Una marca sin su dato guardado (por ejemplo, la versión anterior de la app recibió las frases pero no las
+    // guardaba) haría que Odoo no las vuelva a mandar: se pide de nuevo esa parte.
+    for (final (marca, parte) in const [('catalogo', 'catalogo'), ('precios', 'listas'), ('frases', 'frases')]) {
+      if (marcas.containsKey(marca) && await base!.leer(parte) == null) marcas.remove(marca);
+    }
     final r = await api!.bajar(marcas);
     final guardar = <String, Object?>{};
     for (final parte in partesBajada) {
