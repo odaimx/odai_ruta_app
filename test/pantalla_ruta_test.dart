@@ -1,0 +1,88 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:odai_ruta/src/almacen.dart';
+import 'package:odai_ruta/src/base_local.dart';
+import 'package:odai_ruta/src/motor.dart';
+import 'package:odai_ruta/src/pantallas/ruta.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+void main() {
+  sqfliteFfiInit();
+
+  testWidgets('ruta: por omisión solo los pendientes; filtros Visitados y Todos; acciones en una barra', (tester) async {
+    late Motor motor;
+    await tester.runAsync(() async {
+      final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath,
+          options: OpenDatabaseOptions(version: 1, onCreate: BaseLocal.crearTablas, singleInstance: false));
+      final base = BaseLocal(db);
+      motor = Motor(almacen: AlmacenEnMemoria(), abrirBase: (_) async => base);
+      motor.base = base;
+      motor.cola = Cola(base);
+      await base.escribirVarios({
+        'jornadas': [
+          {
+            'jornada': {'id': 3, 'ruta': 'Ruta Norte', 'state': 'abierta'},
+            'config': {'moneda': {'symbol': r'$', 'position': 'before', 'decimals': 2}},
+            'visitas': [
+              {'id': 10, 'cliente': 'Lupita', 'estado': 'pendiente', 'secuencia': 1},
+              {'id': 11, 'cliente': 'Don Pepe', 'estado': 'pedido', 'secuencia': 2},
+              {
+                'id': 12, 'cliente': 'Abarrotes Sagitario', 'estado': 'pendiente', 'secuencia': 3,
+                'credito': {'estado': 'block'}, 'devoluciones': 1,
+              },
+              {
+                'id': 13, 'cliente': 'Cremería Sin Venta', 'estado': 'pendiente', 'secuencia': 4,
+                'credito': {'estado': 'block'}, 'bloqueo': {'total': true, 'motivo': 'Cheque devuelto'},
+              },
+            ],
+          }
+        ],
+      });
+    });
+    tester.view.physicalSize = const Size(900, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: PantallaRuta(motor: motor, jornadaId: 3)));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('nuevo_cliente')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bloqueado_12')), findsOneWidget, reason: 'Cliente bloqueado en rojo');
+    expect(find.byKey(const ValueKey('devolucion_12')), findsOneWidget, reason: 'Devolución por revisar en naranja');
+    expect(find.byKey(const ValueKey('bloqueado_10')), findsNothing);
+    expect(find.byKey(const ValueKey('sin_venta_13')), findsOneWidget, reason: 'Bloqueo total: otro icono');
+    expect(find.byKey(const ValueKey('bloqueado_13')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('acciones')));
+    await tester.pumpAndSettle();
+    expect(find.text('Cerrar jornada'), findsOneWidget, reason: 'Las demás acciones van en el menú');
+    expect(find.text('Actualizar'), findsOneWidget, reason: 'Actualizar al final de todos los menús');
+    await tester.tapAt(const Offset(5, 1990));
+    await tester.pumpAndSettle();
+    expect(find.text('Lupita'), findsOneWidget);
+    expect(find.text('Don Pepe'), findsNothing, reason: 'Los visitados no estorban al buscar');
+
+    await tester.tap(find.byKey(const ValueKey('filtro_vista')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visitados 1').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Lupita'), findsNothing);
+    expect(find.text('Don Pepe'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('filtro_vista')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Todos 4').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Lupita'), findsOneWidget);
+    expect(find.text('Don Pepe'), findsOneWidget);
+
+    // Tocar el cliente lleva directo a los productos, con disponible y por cobrar arriba.
+    await tester.tap(find.text('Lupita'));
+    // La pantalla del pedido lee la base al abrir: primero se construye y luego se deja leer de verdad.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 300)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('saldos')), findsOneWidget);
+    expect(find.text('Disponible:  '), findsOneWidget);
+  });
+}

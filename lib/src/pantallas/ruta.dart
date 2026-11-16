@@ -1,0 +1,445 @@
+import 'package:flutter/material.dart';
+
+import '../motor.dart';
+import '../ruta.dart';
+import 'cliente.dart';
+import '../tema.dart';
+import 'cliente_datos.dart';
+import 'entrega.dart';
+import 'mapa_ruta.dart';
+import 'comun.dart';
+import 'pedido.dart';
+
+/// Los clientes de la jornada: primero los que faltan por visitar.
+class PantallaRuta extends StatefulWidget {
+  const PantallaRuta({super.key, required this.motor, required this.jornadaId});
+
+  final Motor motor;
+  final int jornadaId;
+
+  @override
+  State<PantallaRuta> createState() => _PantallaRutaState();
+}
+
+class _PantallaRutaState extends State<PantallaRuta> {
+  Ruta? _ruta;
+  String _filtro = '';
+  final _buscar = TextEditingController();
+
+  /// Pendientes (por omisión), visitados o todos: los visitados no estorban al buscar.
+  String _vista = 'pendientes';
+
+  /// Lista (como siempre) o mapa; el celular recuerda la última elección del vendedor.
+  bool _mapa = false;
+
+  /// Cambiar el orden de visita del día con flechas.
+  bool _ordenando = false;
+
+  /// En el mapa la búsqueda va escondida (más espacio para el mapa); se abre con "Buscar cliente" del menú.
+  bool _buscarEnMapa = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.motor.addListener(_cargar);
+    _cargar();
+    widget.motor.dato('vista_ruta').then((v) {
+      if (mounted && v == 'mapa') setState(() => _mapa = true);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _avisoUbicacion());
+  }
+
+  /// La primera vez en la jornada: aviso de que se registra la ubicación (y Android pide el permiso).
+  Future<void> _avisoUbicacion() async {
+    final motor = widget.motor;
+    final clave = 'aviso_ubicacion_${widget.jornadaId}';
+    if (await motor.dato(clave) == true) {
+      motor.revisarRecorrido();
+      return;
+    }
+    final ruta = await Ruta.cargar(motor);
+    if (!ruta.seguimiento(widget.jornadaId)) return;
+    final aviso = '${ruta.mapa(widget.jornadaId)['aviso'] ?? ''}'.trim();
+    final abierta = (ruta.jornada(widget.jornadaId)?['jornada'] as Map?)?['state'] == 'abierta';
+    if (aviso.isEmpty || !abierta || !mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Ubicación durante la jornada'),
+        content: Text(aviso, key: const ValueKey('aviso_ubicacion')),
+        actions: [FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Entendido'))],
+      ),
+    );
+    await motor.base?.escribir(clave, true);
+    await motor.ubicador?.actual();
+    motor.revisarRecorrido();
+  }
+
+  Future<void> _cambiarVista(bool mapa) async {
+    _buscar.clear();
+    setState(() {
+      _mapa = mapa;
+      _ordenando = false;
+      _buscarEnMapa = false;
+      _filtro = '';
+    });
+    await widget.motor.base?.escribir('vista_ruta', mapa ? 'mapa' : 'lista');
+  }
+
+  /// Sube o baja un cliente en el orden de visita del día (no cambia la ruta: eso lo decide el supervisor).
+  Future<void> _mover(List<Map> todas, Map v, int paso) async {
+    final ids = [for (final x in todas) x['id'] as int];
+    final i = ids.indexOf(v['id'] as int);
+    final j = i + paso;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    ids[i] = ids[j];
+    ids[j] = v['id'] as int;
+    await widget.motor.registrar('orden', {
+      'jornada_id': widget.jornadaId,
+      'visitas': ids.where((id) => id > 0).toList(),
+    });
+    await _cargar();
+  }
+
+  @override
+  void dispose() {
+    widget.motor.removeListener(_cargar);
+    _buscar.dispose();
+    super.dispose();
+  }
+
+  /// Tocar un cliente lleva directo a levantar el pedido (con la jornada cerrada o si no se le vende, a su ficha).
+  Future<void> _abrir(Map v, bool abierta) async {
+    final id = v['id'] as int;
+    // Llegada automática al abrir al cliente si no se marcó con "Llegué".
+    if (abierta && _ruta != null && _ruta!.estado(v) == 'pendiente' && !_ruta!.llegada(v)) {
+      widget.motor.marcarVisita(id, 'llegada');
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ruta?.esReparto(widget.jornadaId) == true
+            ? PantallaEntrega(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)
+            : abierta && _ruta?.bloqueoTotal(v) != true
+            ? PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)
+            : PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id),
+      ),
+    );
+    _cargar();
+  }
+
+  /// Escanear el código del cliente (su clave o código de barras) para encontrarlo.
+  Future<void> _escanear() async {
+    final codigo = await escanear(context, titulo: 'Escanear cliente');
+    if (codigo == null || !mounted) return;
+    _buscar.text = codigo;
+    setState(() {
+      _filtro = codigo;
+      _vista = 'todos';
+    });
+  }
+
+  Future<void> _clienteNuevo() async {
+    final id = await Navigator.push<int>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PantallaDatosCliente(motor: widget.motor, jornadaId: widget.jornadaId),
+      ),
+    );
+    await _cargar();
+    if (id == null || !mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id),
+      ),
+    );
+    _cargar();
+  }
+
+  Future<void> _cargar() async {
+    final ruta = await Ruta.cargar(widget.motor);
+    if (mounted) setState(() => _ruta = ruta);
+  }
+
+  Future<void> _cerrar() async {
+    final ruta = _ruta!;
+    final pendientes = ruta.visitas(widget.jornadaId).where((v) => ruta.estado(v) == 'pendiente').length;
+    final reparto = ruta.esReparto(widget.jornadaId);
+    if (pendientes > 0 && ruta.config(widget.jornadaId)['cerrar_pendientes'] != true) {
+      avisar(
+        context,
+        reparto
+            ? 'Faltan $pendientes clientes. Registre la entrega o márquela como no entregada.'
+            : 'Faltan $pendientes clientes. Levante el pedido o indique el motivo de no venta.',
+        error: true,
+      );
+      return;
+    }
+    final ok = await confirmar(
+      context,
+      'Cerrar jornada',
+      pendientes > 0
+          ? 'Quedan $pendientes clientes sin visitar; se marcarán como no visitados. Después ya no podrá '
+                '${reparto ? 'entregar' : 'vender'} en esta jornada.'
+          : 'Después ya no podrá ${reparto ? 'entregar' : 'vender'} en esta jornada.',
+      si: 'Cerrar',
+    );
+    if (!ok || !mounted) return;
+    try {
+      await widget.motor.registrar('cerrar', {'jornada_id': widget.jornadaId});
+      if (mounted) {
+        avisar(context, 'Cierre guardado. Se enviará a Odoo con lo demás.');
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) avisar(context, textoError(e), error: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ruta = _ruta;
+    final datos = ruta?.jornada(widget.jornadaId);
+    if (ruta == null || datos == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    final jornada = datos['jornada'] as Map;
+    final moneda = ruta.moneda(widget.jornadaId);
+    final t = _filtro.toLowerCase();
+    final todas = ruta.visitas(widget.jornadaId);
+    final visitas = todas
+        .where(
+          (v) => switch (_vista) {
+            'pendientes' => ruta.estado(v) == 'pendiente',
+            'visitados' => ruta.estado(v) != 'pendiente',
+            _ => true,
+          },
+        )
+        .toList();
+    bool coincide(Map v) =>
+        t.isEmpty || '${v['cliente']} ${v['comercial']} ${(v['codigos'] as List?)?.join(' ')}'.toLowerCase().contains(t);
+    // En la lista la búsqueda filtra; en el mapa quedan todos los pines y el mapa va a los encontrados.
+    final encontrados = visitas.where(coincide).toList();
+    if (!_mapa) visitas.retainWhere(coincide);
+    final aviso = datos['licencia_aviso'] as String?;
+    final abierta = jornada['state'] == 'abierta';
+    final pendientesN = todas.where((v) => ruta.estado(v) == 'pendiente').length;
+    final reparto = ruta.esReparto(widget.jornadaId);
+    return Scaffold(
+      appBar: CabeceraOdai(
+        titulo: widget.motor.nombreVendedor.isEmpty ? '${jornada['ruta']}' : widget.motor.nombreVendedor,
+        subtitulo: '${jornada['ruta']}',
+      ),
+      bottomNavigationBar: const PieOdai(),
+      body: Column(
+        children: [
+          // Misma barra en la lista y en el mapa: filtro desplegable, agregar cliente, ordenar y mapa.
+          BarraAcciones(
+            motor: widget.motor,
+            acciones: [
+              if (_mapa)
+                Accion(Icons.search, _buscarEnMapa ? 'Ocultar búsqueda' : 'Buscar cliente', () {
+                  _buscar.clear();
+                  setState(() {
+                    _buscarEnMapa = !_buscarEnMapa;
+                    _filtro = '';
+                  });
+                }),
+              if (abierta) Accion(Icons.flag, 'Cerrar jornada', _cerrar),
+            ],
+            centro: Row(
+              children: [
+                Flexible(
+                  child: FiltroDesplegable<String>(
+                    key: const ValueKey('filtro_vista'),
+                    opciones: [
+                      ('pendientes', 'Pendientes $pendientesN'),
+                      ('visitados', 'Visitados ${todas.length - pendientesN}'),
+                      ('todos', 'Todos ${todas.length}'),
+                    ],
+                    elegido: _vista,
+                    onChanged: (v) => setState(() {
+                      _vista = v;
+                      if (v != 'pendientes') _ordenando = false;
+                    }),
+                  ),
+                ),
+                if (abierta && !reparto)
+                  BotonCuadro(
+                    key: const ValueKey('nuevo_cliente'),
+                    icono: Icons.person_add_alt_1,
+                    tooltip: 'Nuevo cliente',
+                    onPressed: _clienteNuevo,
+                  ),
+                if (abierta)
+                  BotonCuadro(
+                    key: const ValueKey('ordenar'),
+                    icono: _ordenando ? Icons.check : Icons.swap_vert,
+                    tooltip: _ordenando ? 'Listo' : 'Cambiar orden de visita',
+                    activo: _ordenando,
+                    // Se ordena en la lista de pendientes, sin búsqueda.
+                    onPressed: () async {
+                      if (_mapa) await _cambiarVista(false);
+                      _buscar.clear();
+                      setState(() {
+                        _filtro = '';
+                        _vista = 'pendientes';
+                        _ordenando = !_ordenando;
+                      });
+                    },
+                  ),
+                BotonCuadro(
+                  key: const ValueKey('vista_mapa'),
+                  icono: _mapa ? Icons.view_list : Icons.location_on_outlined,
+                  tooltip: _mapa ? 'Ver lista' : 'Ver mapa',
+                  activo: _mapa,
+                  onPressed: () => _cambiarVista(!_mapa),
+                ),
+              ],
+            ),
+          ),
+          // El aviso de la jornada abierta de más días solo en la lista: el mapa queda con todo el espacio.
+          if (!_mapa && aviso != null && aviso.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: const Color(0xFFFFF3E0),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Text(aviso, style: const TextStyle(color: naranjaOdai, fontWeight: FontWeight.w600)),
+            ),
+          if (!_mapa || _buscarEnMapa)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: Buscador(
+                key: ValueKey(_mapa ? 'buscar_mapa' : 'buscar_lista'),
+                controller: _buscar,
+                hint: _mapa ? 'Buscar cliente en el mapa' : 'Buscar cliente',
+                onChanged: (v) => setState(() => _filtro = v),
+                // El lector de códigos solo en la lista.
+                onEscanear: _mapa ? null : _escanear,
+              ),
+            ),
+          if (_mapa)
+            Expanded(
+              child: MapaRuta(
+                motor: widget.motor,
+                ruta: ruta,
+                jornadaId: widget.jornadaId,
+                visitas: visitas,
+                encontrados: t.isEmpty ? null : encontrados,
+                onAbrir: (v) => _abrir(v, abierta),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                itemCount: visitas.length,
+                itemBuilder: (context, i) {
+                  final v = visitas[i];
+                  final estado = ruta.estado(v);
+                  final porCobrar = ruta.porCobrar(v['id'] as int);
+                  final comercial = '${v['comercial'] ?? ''}'.trim();
+                  final bloqueado = (v['credito'] as Map?)?['estado'] == 'block';
+                  final sinVenta = ruta.bloqueoTotal(v);
+                  final devolucion = ruta.tieneDevolucion(v);
+                  final chico = Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF222222));
+                  return TarjetaOdai(
+                    key: ValueKey('cliente_${v['id']}'),
+                    padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+                    onTap: _ordenando ? null : () => _abrir(v, abierta),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                comercial.isNotEmpty ? comercial : '${v['cliente']}',
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF111111),
+                                ),
+                              ),
+                              if (comercial.isNotEmpty)
+                                Text('${v['cliente']}', style: const TextStyle(fontSize: 16, color: Color(0xFF222222))),
+                              if (porCobrar > 0) Text('Debe ${moneda(porCobrar)}', style: chico),
+                              if (reparto)
+                                Text(
+                                  '${ruta.entregas(v).length == 1 ? '1 pedido' : '${ruta.entregas(v).length} pedidos'}'
+                                  ' · ${moneda(ruta.entregas(v).fold(0.0, (s, e) => s + ((e['total'] as num?)?.toDouble() ?? 0)))}',
+                                  style: chico,
+                                ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(etiquetasEstado[estado] ?? estado, style: chico),
+                            if (ruta.enCola(v)) Text('por enviar', style: chico),
+                            if (bloqueado || sinVenta || devolucion)
+                              Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: [
+                                // Dos bloqueos distintos: sin crédito (se le vende de contado) y sin venta.
+                                if (sinVenta)
+                                  Tooltip(
+                                    key: ValueKey('sin_venta_${v['id']}'),
+                                    message: 'No se le vende: solo cobrar',
+                                    child: const Icon(Icons.do_not_disturb_on, size: 20, color: rojoOdai),
+                                  )
+                                else if (bloqueado)
+                                  Tooltip(
+                                    key: ValueKey('bloqueado_${v['id']}'),
+                                    message: 'Crédito bloqueado: solo de contado',
+                                    child: const Icon(Icons.credit_card_off, size: 20, color: rojoOdai),
+                                  ),
+                                if (devolucion)
+                                  Tooltip(
+                                    key: ValueKey('devolucion_${v['id']}'),
+                                    message: 'Tiene devolución',
+                                    child: const Icon(Icons.assignment_return, size: 20, color: naranjaOdai),
+                                  ),
+                              ]),
+                          ],
+                        ),
+                        const SizedBox(width: 6),
+                        if (_ordenando) ...[
+                          IconButton(
+                            key: ValueKey('subir_${v['id']}'),
+                            tooltip: 'Subir',
+                            onPressed: i == 0 ? null : () => _mover(visitas, v, -1),
+                            icon: const Icon(Icons.arrow_upward, size: 26),
+                          ),
+                          IconButton(
+                            key: ValueKey('bajar_${v['id']}'),
+                            tooltip: 'Bajar',
+                            onPressed: i == visitas.length - 1 ? null : () => _mover(visitas, v, 1),
+                            icon: const Icon(Icons.arrow_downward, size: 26),
+                          ),
+                        ] else
+                          Icon(
+                            estado == 'pendiente'
+                                ? Icons.keyboard_double_arrow_right
+                                : estado == 'pedido'
+                                ? Icons.shopping_cart
+                                : estado == 'entregado' || estado == 'parcial'
+                                ? Icons.local_shipping
+                                : Icons.block,
+                            size: 30,
+                            color: estado == 'pendiente' ? const Color(0xFF111111) : moradoOscuro,
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

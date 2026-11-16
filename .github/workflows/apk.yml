@@ -1,0 +1,90 @@
+name: APK
+
+# Revisa, prueba y compila el APK de Android en cada cambio. El APK queda en la pestaña Actions › la corrida ›
+# Artifacts. Para firmarlo como entrega, agregue en Settings › Secrets and variables › Actions:
+# ANDROID_KEYSTORE_BASE64 (el .jks en base64), ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+# Sin ellos se firma con la llave de depuración (sirve para probar, no para entregar).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      HAY_FIRMA: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+
+      # Sin firma de entrega, el APK se firma con la llave de depuración. Se guarda en la caché de GitHub para
+      # que sea la misma en cada compilación y cada APK de prueba se instale encima del anterior (si cambiara,
+      # Android diría "conflicto con un paquete"). La caché se borra tras 7 días sin compilaciones.
+      - name: Llave de depuración fija
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: odai-ruta-debug-keystore-v1
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Revisión
+        run: flutter analyze
+
+      - name: Pruebas
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q libsqlite3-dev
+          flutter test
+
+      - name: Firma de entrega
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        if: env.HAY_FIRMA == 'true'
+        run: |
+          echo "$KEYSTORE" | base64 -d > android/app/entrega.jks
+          {
+            echo "storeFile=entrega.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+            echo "storeType=pkcs12"
+          } > android/key.properties
+
+      - name: Compilar APK
+        run: flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }} --dart-define=COMPILACION=${{ github.run_number }}
+
+      - name: Revisar la firma
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep -E "Signer|SHA-256"
+          if [ "$HAY_FIRMA" = "true" ] && "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep -q "Android Debug"; then
+            echo "El APK salió con la llave de depuración aunque hay firma de entrega" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: odai-ruta-apk-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
