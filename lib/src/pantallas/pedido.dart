@@ -308,9 +308,10 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     }
 
     // Un desplegable por atributo (sabor, tamaño...): no llena la tarjeta de botones.
-    final selector = Wrap(
-      spacing: 8,
-      runSpacing: 6,
+    // Uno por renglón, a todo lo ancho: en celulares angostos no se sale de la tarjeta.
+    final selector = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 6,
       children: [
         for (var i = 0; i < nombres.length; i++)
           _desplegable(
@@ -370,6 +371,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
       child: DropdownButton<String>(
         value: opciones.any((o) => o.$1 == elegido) ? elegido : null,
         isDense: true,
+        isExpanded: true,
         borderRadius: BorderRadius.circular(8),
         hint: Text(atributo),
         selectedItemBuilder: (_) => [
@@ -378,6 +380,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
               padding: const EdgeInsets.symmetric(vertical: 6),
               child: Text(
                 '$atributo: ${o.$1}',
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF111111)),
               ),
             ),
@@ -388,6 +391,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
               value: o.$1,
               child: Text(
                 o.$1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 15, color: o.$2 ? const Color(0xFF111111) : const Color(0xFF9E9E9E)),
               ),
             ),
