@@ -36,12 +36,26 @@ class DatosQr {
   final String db;
   final String codigo;
 
+  /// El mensaje que manda el supervisor por WhatsApp o Telegram ("Servidor: ...", "Base: ...", "Código: ...").
+  static Map<String, String>? delMensaje(String texto) {
+    String? valor(String etiqueta) =>
+        RegExp('^\\s*$etiqueta\\s*:\\s*(\\S+)', multiLine: true, caseSensitive: false).firstMatch(texto)?.group(1);
+    final url = valor('Servidor');
+    final codigo = RegExp(r'^\s*C[oó]digo\s*:\s*([A-Za-z0-9 -]+)', multiLine: true, caseSensitive: false)
+        .firstMatch(texto)
+        ?.group(1)
+        ?.trim();
+    if (url == null || codigo == null || codigo.isEmpty) return null;
+    return {'url': url, 'db': valor('Base') ?? '', 'codigo': codigo};
+  }
+
   static DatosQr leer(String texto, {bool permitirHttp = false}) {
     Object? json;
     try {
       json = jsonDecode(texto);
     } on FormatException {
-      throw ApiError('datos', 'Ese código QR no es de Odai Ruta.');
+      json = delMensaje(texto);
+      if (json == null) throw ApiError('datos', 'Ese código QR no es de Odai Ruta.');
     }
     if (json is! Map || json['url'] is! String || json['codigo'] is! String) {
       throw ApiError('datos', 'Ese código QR no es de Odai Ruta.');

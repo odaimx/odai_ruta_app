@@ -148,6 +148,10 @@ void main() {
         reason: 'Fuera de desarrollo, http:// se cambia a https://');
     expect(() => motor.emparejar('{"url": "ftp://x.com", "db": "", "codigo": "bueno"}'), throwsA(isA<ApiError>()));
     expect(() => motor.emparejar('hola'), throwsA(isA<ApiError>()));
+    // El mensaje de activación que manda el supervisor por WhatsApp o Telegram.
+    final mensaje = DatosQr.leer('Activación de ODAI Ruta para Juan\nServidor: https://odoo.ejemplo.mx\n'
+        'Base: pruebas_ruta\nCódigo: K7QM-4P2X-9RTW\nSirve una sola vez y vence a las 16:30.');
+    expect([mensaje.url, mensaje.db, mensaje.codigo], ['https://odoo.ejemplo.mx', 'pruebas_ruta', 'K7QM-4P2X-9RTW']);
     await expectLater(motor.emparejar(qr.replaceFirst('bueno', 'malo')), throwsA(isA<ApiError>()));
     expect(motor.emparejado, isFalse);
   });
