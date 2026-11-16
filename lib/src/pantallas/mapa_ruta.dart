@@ -82,6 +82,7 @@ class MapaRuta extends StatefulWidget {
     required this.jornadaId,
     required this.visitas,
     required this.onAbrir,
+    this.encontrados,
   });
 
   final Motor motor;
@@ -91,6 +92,9 @@ class MapaRuta extends StatefulWidget {
   /// En el orden de visita (pendientes primero).
   final List<Map> visitas;
   final void Function(Map visita) onAbrir;
+
+  /// Lo que encontró "Buscar cliente": el mapa se mueve hasta ellos y los resalta (null: sin búsqueda).
+  final List<Map>? encontrados;
 
   @override
   State<MapaRuta> createState() => _MapaRutaState();
@@ -114,6 +118,33 @@ class _MapaRutaState extends State<MapaRuta> {
     if (_seguimiento) {
       unawaited(_actualizarVivo());
       _iniciarVivo();
+    }
+  }
+
+  @override
+  void didUpdateWidget(MapaRuta anterior) {
+    super.didUpdateWidget(anterior);
+    final ids = [for (final v in widget.encontrados ?? const <Map>[]) v['id']];
+    final antes = [for (final v in anterior.encontrados ?? const <Map>[]) v['id']];
+    if (ids.isNotEmpty && ids.join(',') != antes.join(',')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _enfocar());
+    }
+  }
+
+  /// Lleva el mapa a los clientes encontrados: uno solo, de cerca; varios, que se vean todos.
+  void _enfocar() {
+    if (!mounted) return;
+    final puntos = [for (final v in widget.encontrados ?? const <Map>[]) ?puntoDe(v)];
+    try {
+      if (puntos.length == 1) {
+        _control.move(puntos.first, 17);
+      } else if (puntos.length > 1) {
+        _control.fitCamera(
+          CameraFit.bounds(bounds: LatLngBounds.fromPoints(puntos), padding: const EdgeInsets.all(60), maxZoom: 17),
+        );
+      }
+    } catch (_) {
+      // El mapa aún no se dibuja: se queda donde está.
     }
   }
 
@@ -268,11 +299,12 @@ class _MapaRutaState extends State<MapaRuta> {
       }
       puntos.add(punto);
       final color = colorEstado(widget.ruta.estado(v), siguiente: identical(v, siguiente));
+      final resaltado = widget.encontrados?.any((e) => e['id'] == v['id']) == true;
       marcadores.add(
         Marker(
           point: punto,
-          width: 36,
-          height: 36,
+          width: resaltado ? 46 : 36,
+          height: resaltado ? 46 : 36,
           child: GestureDetector(
             key: ValueKey('pin_${v['id']}'),
             onTap: () => _ficha(v, i + 1),
@@ -281,7 +313,7 @@ class _MapaRutaState extends State<MapaRuta> {
               decoration: BoxDecoration(
                 color: color,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
+                border: Border.all(color: resaltado ? const Color(0xFF111111) : Colors.white, width: resaltado ? 3 : 2),
                 boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 4)],
               ),
               child: Text(

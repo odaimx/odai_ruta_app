@@ -107,6 +107,35 @@ void main() {
     expect(ruta.enCola(ruta.visita(3, provisional)!), isTrue);
   });
 
+  test('cliente nuevo ya enviado: su id provisional lleva a la visita real (Ver ficha no se queda cargando)', () async {
+    final uuidAlta = await motor.cola!.agregar('cliente_nuevo', {'jornada_id': 3, 'nombre': 'Doña Mary'});
+    final provisional = Ruta.idProvisional(uuidAlta);
+    await motor.cola!.aplicarResultados([
+      {
+        'uuid': uuidAlta,
+        'estado': 'hecho',
+        'resultado': {
+          'visita_id': 50,
+          'visita': {'id': 50, 'cliente': 'Doña Mary', 'estado': 'pendiente', 'secuencia': 9},
+        },
+      },
+    ]);
+    var ruta = await Ruta.cargar(motor);
+    expect(ruta.idReal(provisional), 50);
+    expect(ruta.visita(3, provisional)?['id'], 50, reason: 'Aunque la visita aún no baje, con lo que respondió Odoo');
+    expect(ruta.visitas(3).where((v) => v['cliente'] == 'Doña Mary'), hasLength(1));
+    // Lo que se capture con el id provisional sube con la visita real.
+    await motor.registrar('cliente', {'visita_id': provisional, 'contacto': {'correo': 'mary@ejemplo.mx'}});
+    final cambio = (await motor.cola!.pendientes(limite: 100)).lastWhere((o) => o.tipo == 'cliente');
+    expect(cambio.datos['visita_id'], 50);
+    // Cuando ya bajó la visita de Odoo, no se repite.
+    final jornadas = (await motor.base!.leer('jornadas')) as List;
+    ((jornadas.first as Map)['visitas'] as List).add({'id': 50, 'cliente': 'Doña Mary', 'estado': 'pendiente'});
+    await motor.base!.escribir('jornadas', jornadas);
+    ruta = await Ruta.cargar(motor);
+    expect(ruta.visitas(3).where((v) => v['id'] == 50), hasLength(1));
+  });
+
   test('para pedir factura: faltan datos fiscales hasta que se completan en el celular', () async {
     await motor.base!.escribirVarios({
       'jornadas': [

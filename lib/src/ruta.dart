@@ -96,6 +96,7 @@ class Ruta {
     this._facturas,
     this.motivos,
     this._pendientes,
+    this._altasHechas,
   );
 
   final List<Map> jornadas;
@@ -107,10 +108,14 @@ class Ruta {
   final List<Map> motivos;
   final List<Operacion> _pendientes;
 
+  /// Id provisional de un cliente nuevo que Odoo ya creó → lo que respondió (`visita_id` y `visita`).
+  final Map<int, Map> _altasHechas;
+
   static Future<Ruta> cargar(Motor motor) async {
     List<Map> lista(Object? v) => ((v as List?) ?? const []).whereType<Map>().toList();
     Map mapa(Object? v) => (v as Map?) ?? const {};
     final pendientes = await motor.cola?.pendientes(limite: 100000) ?? const <Operacion>[];
+    final hechas = await motor.cola?.altasHechas() ?? const <Operacion>[];
     return Ruta._(
       lista(await motor.dato('jornadas')),
       lista(await motor.dato('catalogo')).where((p) => ((p['combo'] as List?) ?? const []).isEmpty).toList(),
@@ -120,6 +125,10 @@ class Ruta {
       mapa(await motor.dato('facturas')),
       lista(await motor.dato('motivos')),
       pendientes,
+      {
+        for (final a in hechas)
+          if (a.resultado?['visita_id'] is int) idProvisional(a.uuid): {...a.resultado!, 'jornada_id': a.datos['jornada_id']},
+      },
     );
   }
 
@@ -277,6 +286,13 @@ class Ruta {
       ...((jornada(jornadaId)?['visitas'] as List?) ?? const []).whereType<Map>().map(_conContacto),
       ..._altasDe(jornadaId).map(_conContacto),
     ];
+    // Cliente nuevo que Odoo ya creó pero cuya visita aún no baja: con lo que respondió Odoo.
+    for (final a in _altasHechas.values) {
+      final v = a['visita'];
+      if (a['jornada_id'] == jornadaId && v is Map && !todas.any((x) => x['id'] == a['visita_id'])) {
+        todas.add(_conContacto({...v, 'id': a['visita_id']}));
+      }
+    }
     int orden(Map v) => estado(v) == 'pendiente' ? 0 : 1;
     final enCola = _ordenEnCola(jornadaId);
     int secuencia(Map v) => enCola.isNotEmpty && enCola.containsKey(v['id'])
@@ -290,11 +306,21 @@ class Ruta {
   }
 
   Map? visita(int jornadaId, int visitaId) {
+    final id = idReal(visitaId);
     for (final v in visitas(jornadaId)) {
-      if (v['id'] == visitaId) return v;
+      if (v['id'] == id) return v;
     }
     return null;
   }
+
+  /// El id de la visita en Odoo: un cliente nuevo ya enviado deja su id provisional por el real.
+  int idReal(int visitaId) =>
+      visitaId < 0 ? (_altasHechas[visitaId]?['visita_id'] as int?) ?? visitaId : visitaId;
+
+  /// Bloqueo total (no se le vende en ruta, solo se le cobra) y su motivo, como lo manda Odoo.
+  bool bloqueoTotal(Map visita) => (visita['bloqueo'] as Map?)?['total'] == true;
+
+  String motivoBloqueo(Map visita) => '${(visita['bloqueo'] as Map?)?['motivo'] ?? ''}'.trim();
 
   /// Facturas abiertas del cliente, descontando los cobros que esperan en la cola (de la más antigua a la más
   /// nueva, como los aplica Odoo).

@@ -26,6 +26,9 @@ class PantallaCliente extends StatefulWidget {
 class _PantallaClienteState extends State<PantallaCliente> {
   Ruta? _ruta;
 
+  /// La visita en Odoo (un cliente nuevo ya enviado deja su id provisional por el real).
+  int get _vid => _ruta?.idReal(widget.visitaId) ?? widget.visitaId;
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +51,7 @@ class _PantallaClienteState extends State<PantallaCliente> {
         '¿Está en el negocio del cliente? Se guarda la ubicación del celular como la del cliente.', si: 'Fijar');
     if (!ok || !mounted) return;
     try {
-      final hecho = await widget.motor.fijarUbicacion(widget.visitaId);
+      final hecho = await widget.motor.fijarUbicacion(_vid);
       if (!mounted) return;
       avisar(
           context,
@@ -64,17 +67,35 @@ class _PantallaClienteState extends State<PantallaCliente> {
   @override
   Widget build(BuildContext context) {
     final ruta = _ruta;
-    final v = ruta?.visita(widget.jornadaId, widget.visitaId);
-    if (ruta == null || v == null) {
+    if (ruta == null) {
       return Scaffold(appBar: AppBar(), body: const Center(child: CircularProgressIndicator()));
+    }
+    final v = ruta.visita(widget.jornadaId, widget.visitaId);
+    if (v == null) {
+      // Ya no se queda cargando: por ejemplo, un cliente nuevo que aún no baja de Odoo.
+      return Scaffold(
+        appBar: AppBar(),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('No se encontró el cliente en el celular. Toque Actualizar en la lista de clientes.',
+                key: ValueKey('cliente_no_encontrado'), textAlign: TextAlign.center, style: TextStyle(fontSize: 17)),
+          ),
+        ),
+      );
     }
     final moneda = ruta.moneda(widget.jornadaId);
     final credito = (v['credito'] as Map?) ?? const {};
     final disponible = credito['disponible_ruta'];
-    final enCola = ruta.pedidoEnCola(widget.visitaId);
-    final porCobrar = ruta.porCobrar(widget.visitaId);
+    final enCola = ruta.pedidoEnCola(_vid);
+    final porCobrar = ruta.porCobrar(_vid);
     final abierta = (ruta.jornada(widget.jornadaId)?['jornada'] as Map?)?['state'] == 'abierta';
     final estado = ruta.estado(v);
+    // Reparto no vende; con bloqueo total solo se le cobra.
+    final reparto = ruta.esReparto(widget.jornadaId);
+    final sinVenta = ruta.bloqueoTotal(v);
+    final vende = !reparto && !sinVenta;
+    final motivoCredito = '${credito['mensaje'] ?? ''}'.trim();
     final tema = Theme.of(context);
     final pedidos = ((v['pedidos'] as List?) ?? const []).whereType<Map>().toList();
     return Scaffold(
@@ -85,23 +106,25 @@ class _PantallaClienteState extends State<PantallaCliente> {
       body: Column(children: [
         BarraAcciones(motor: widget.motor, acciones: [
           if (abierta) ...[
-            Accion(Icons.add_shopping_cart, 'Levantar pedido',
-                () => _ir(PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
-                principal: true),
+            if (vende)
+              Accion(Icons.add_shopping_cart, 'Levantar pedido',
+                  () => _ir(PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: _vid)),
+                  principal: true),
             if (ruta.cobra(widget.jornadaId))
               Accion(Icons.payments, 'Cobrar',
-                  () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+                  () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: _vid)),
+                  principal: !vende),
             if (ruta.seguimiento(widget.jornadaId) && estado == 'pendiente' && !ruta.llegada(v))
               Accion(Icons.where_to_vote, 'Llegué', () async {
-                await widget.motor.marcarVisita(widget.visitaId, 'llegada');
+                await widget.motor.marcarVisita(_vid, 'llegada');
                 if (context.mounted) avisar(context, 'Llegada registrada.');
                 _cargar();
               }),
             if (ruta.seguimiento(widget.jornadaId))
               Accion(Icons.add_location_alt, 'Fijar ubicación aquí', _fijarUbicacion),
-            if (estado == 'pendiente')
+            if (estado == 'pendiente' && !reparto)
               Accion(Icons.block, 'Sin venta',
-                  () => _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId))),
+                  () => _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: _vid))),
           ],
           if (puntoDe(v) != null) Accion(Icons.directions, 'Cómo llegar', () => comoLlegar(context, puntoDe(v)!)),
           Accion(Icons.edit, 'Modificar cliente',
@@ -120,18 +143,56 @@ class _PantallaClienteState extends State<PantallaCliente> {
             if (v['alta_ruta'] == true) const Chip(label: Text('Nuevo · de contado')),
             if ((v['id'] as int) < 0) const Chip(label: Text('Por enviar')),
           ]),
+          if (sinVenta)
+            Container(
+              key: const ValueKey('bloqueo_total'),
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEBEE),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: rojoOdai),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.do_not_disturb_on, color: rojoOdai),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('No se le vende: solo cobrar',
+                        style: TextStyle(fontWeight: FontWeight.w800, color: rojoOdai)),
+                    Text(ruta.motivoBloqueo(v).isEmpty ? 'Sin motivo capturado en Odoo.' : 'Motivo: ${ruta.motivoBloqueo(v)}'),
+                  ]),
+                ),
+              ]),
+            ),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Crédito', style: tema.textTheme.titleSmall),
+                Row(children: [
+                  Text('Crédito', style: tema.textTheme.titleSmall),
+                  if (credito['estado'] == 'block') ...[
+                    const SizedBox(width: 8),
+                    const Icon(Icons.credit_card_off, size: 18, color: rojoOdai),
+                    const Text(' Bloqueado', style: TextStyle(color: rojoOdai, fontWeight: FontWeight.w700)),
+                  ],
+                ]),
                 Text(credito['a_credito'] == true
                     ? (disponible == null
                         ? 'Sin límite'
                         : 'Para vender ${moneda((disponible as num) - enCola)}')
                     : 'Solo de contado'),
                 if ((credito['vencido'] as num? ?? 0) > 0) Text('Vencido ${moneda(credito['vencido'] as num)}'),
-                if ((credito['mensaje'] as String?)?.isNotEmpty == true) Text('${credito['mensaje']}'),
+                // Por qué no tiene crédito (o por qué está bloqueado).
+                if (motivoCredito.isNotEmpty)
+                  Text('Motivo: $motivoCredito', key: const ValueKey('motivo_credito'))
+                else if (credito['a_credito'] != true)
+                  Text(
+                    v['alta_ruta'] == true
+                        ? 'Motivo: cliente nuevo, de contado hasta que la oficina lo revise.'
+                        : 'Motivo: sin crédito autorizado.',
+                    key: const ValueKey('motivo_credito'),
+                  ),
                 Text('Por cobrar ${moneda(porCobrar)}'),
               ]),
             ),
@@ -155,6 +216,17 @@ class _PantallaClienteState extends State<PantallaCliente> {
                   clipBehavior: Clip.antiAlias,
                   title: Text('${p['name']} · ${moneda(p['total'] as num? ?? 0)}',
                       style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF111111))),
+                  // Pedido con devolución (por revisar en la oficina o ya aplicada).
+                  subtitle: '${p['devolucion'] ?? ''}'.isEmpty && ruta.devolucionEnCola(_vid, p['id'] as int) == null
+                      ? null
+                      : Row(key: ValueKey('pedido_devolucion_${p['id']}'), children: [
+                          const Icon(Icons.assignment_return, size: 16, color: naranjaOdai),
+                          const SizedBox(width: 4),
+                          Text(
+                            p['devolucion'] == 'devuelto' ? 'Con devolución' : 'Devolución por revisar',
+                            style: const TextStyle(color: naranjaOdai, fontWeight: FontWeight.w600),
+                          ),
+                        ]),
                   childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                   children: [
                     for (final l in ((p['lineas'] as List?) ?? const []).whereType<Map>())
@@ -175,7 +247,7 @@ class _PantallaClienteState extends State<PantallaCliente> {
                           icon: const Icon(Icons.assignment_return),
                           label: const Text('Devolver'),
                           onPressed: () => _ir(PantallaDevolucion(
-                              motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId, pedido: p)),
+                              motor: widget.motor, jornadaId: widget.jornadaId, visitaId: _vid, pedido: p)),
                         ),
                       ),
                   ],

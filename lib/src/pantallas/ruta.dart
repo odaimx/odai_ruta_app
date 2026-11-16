@@ -35,6 +35,9 @@ class _PantallaRutaState extends State<PantallaRuta> {
   /// Cambiar el orden de visita del día con flechas.
   bool _ordenando = false;
 
+  /// En el mapa la búsqueda va escondida (más espacio para el mapa); se abre con "Buscar cliente" del menú.
+  bool _buscarEnMapa = false;
+
   @override
   void initState() {
     super.initState();
@@ -73,9 +76,12 @@ class _PantallaRutaState extends State<PantallaRuta> {
   }
 
   Future<void> _cambiarVista(bool mapa) async {
+    _buscar.clear();
     setState(() {
       _mapa = mapa;
       _ordenando = false;
+      _buscarEnMapa = false;
+      _filtro = '';
     });
     await widget.motor.base?.escribir('vista_ruta', mapa ? 'mapa' : 'lista');
   }
@@ -102,7 +108,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
     super.dispose();
   }
 
-  /// Tocar un cliente lleva directo a levantar el pedido (con la jornada cerrada, a su ficha).
+  /// Tocar un cliente lleva directo a levantar el pedido (con la jornada cerrada o si no se le vende, a su ficha).
   Future<void> _abrir(Map v, bool abierta) async {
     final id = v['id'] as int;
     // Llegada automática al abrir al cliente si no se marcó con "Llegué".
@@ -114,7 +120,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
       MaterialPageRoute(
         builder: (_) => _ruta?.esReparto(widget.jornadaId) == true
             ? PantallaEntrega(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)
-            : abierta
+            : abierta && _ruta?.bloqueoTotal(v) != true
             ? PantallaPedido(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id)
             : PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: id),
       ),
@@ -213,12 +219,12 @@ class _PantallaRutaState extends State<PantallaRuta> {
             _ => true,
           },
         )
-        .where(
-          (v) =>
-              t.isEmpty ||
-              '${v['cliente']} ${v['comercial']} ${(v['codigos'] as List?)?.join(' ')}'.toLowerCase().contains(t),
-        )
         .toList();
+    bool coincide(Map v) =>
+        t.isEmpty || '${v['cliente']} ${v['comercial']} ${(v['codigos'] as List?)?.join(' ')}'.toLowerCase().contains(t);
+    // En la lista la búsqueda filtra; en el mapa quedan todos los pines y el mapa va a los encontrados.
+    final encontrados = visitas.where(coincide).toList();
+    if (!_mapa) visitas.retainWhere(coincide);
     final aviso = datos['licencia_aviso'] as String?;
     final abierta = jornada['state'] == 'abierta';
     final pendientesN = todas.where((v) => ruta.estado(v) == 'pendiente').length;
@@ -234,7 +240,17 @@ class _PantallaRutaState extends State<PantallaRuta> {
           // Misma barra en la lista y en el mapa: filtro desplegable, agregar cliente, ordenar y mapa.
           BarraAcciones(
             motor: widget.motor,
-            acciones: [if (abierta) Accion(Icons.flag, 'Cerrar jornada', _cerrar)],
+            acciones: [
+              if (_mapa)
+                Accion(Icons.search, _buscarEnMapa ? 'Ocultar búsqueda' : 'Buscar cliente', () {
+                  _buscar.clear();
+                  setState(() {
+                    _buscarEnMapa = !_buscarEnMapa;
+                    _filtro = '';
+                  });
+                }),
+              if (abierta) Accion(Icons.flag, 'Cerrar jornada', _cerrar),
+            ],
             centro: Row(
               children: [
                 Flexible(
@@ -286,22 +302,26 @@ class _PantallaRutaState extends State<PantallaRuta> {
               ],
             ),
           ),
-          if (aviso != null && aviso.isNotEmpty)
+          // El aviso de la jornada abierta de más días solo en la lista: el mapa queda con todo el espacio.
+          if (!_mapa && aviso != null && aviso.isNotEmpty)
             Container(
               width: double.infinity,
               color: const Color(0xFFFFF3E0),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Text(aviso, style: const TextStyle(color: naranjaOdai, fontWeight: FontWeight.w600)),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            child: Buscador(
-              controller: _buscar,
-              hint: 'Buscar cliente',
-              onChanged: (v) => setState(() => _filtro = v),
-              onEscanear: _escanear,
+          if (!_mapa || _buscarEnMapa)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: Buscador(
+                key: ValueKey(_mapa ? 'buscar_mapa' : 'buscar_lista'),
+                controller: _buscar,
+                hint: _mapa ? 'Buscar cliente en el mapa' : 'Buscar cliente',
+                onChanged: (v) => setState(() => _filtro = v),
+                // El lector de códigos solo en la lista.
+                onEscanear: _mapa ? null : _escanear,
+              ),
             ),
-          ),
           if (_mapa)
             Expanded(
               child: MapaRuta(
@@ -309,6 +329,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                 ruta: ruta,
                 jornadaId: widget.jornadaId,
                 visitas: visitas,
+                encontrados: t.isEmpty ? null : encontrados,
                 onAbrir: (v) => _abrir(v, abierta),
               ),
             )
@@ -323,6 +344,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                   final porCobrar = ruta.porCobrar(v['id'] as int);
                   final comercial = '${v['comercial'] ?? ''}'.trim();
                   final bloqueado = (v['credito'] as Map?)?['estado'] == 'block';
+                  final sinVenta = ruta.bloqueoTotal(v);
                   final devolucion = ruta.tieneDevolucion(v);
                   final chico = Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF222222));
                   return TarjetaOdai(
@@ -360,19 +382,25 @@ class _PantallaRutaState extends State<PantallaRuta> {
                           children: [
                             Text(etiquetasEstado[estado] ?? estado, style: chico),
                             if (ruta.enCola(v)) Text('por enviar', style: chico),
-                            if (bloqueado || devolucion)
-                              Row(mainAxisSize: MainAxisSize.min, children: [
-                                if (bloqueado)
+                            if (bloqueado || sinVenta || devolucion)
+                              Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: [
+                                // Dos bloqueos distintos: sin crédito (se le vende de contado) y sin venta.
+                                if (sinVenta)
+                                  Tooltip(
+                                    key: ValueKey('sin_venta_${v['id']}'),
+                                    message: 'No se le vende: solo cobrar',
+                                    child: const Icon(Icons.do_not_disturb_on, size: 20, color: rojoOdai),
+                                  )
+                                else if (bloqueado)
                                   Tooltip(
                                     key: ValueKey('bloqueado_${v['id']}'),
-                                    message: 'Crédito bloqueado',
-                                    child: const Icon(Icons.block, size: 20, color: rojoOdai),
+                                    message: 'Crédito bloqueado: solo de contado',
+                                    child: const Icon(Icons.credit_card_off, size: 20, color: rojoOdai),
                                   ),
-                                if (bloqueado && devolucion) const SizedBox(width: 4),
                                 if (devolucion)
                                   Tooltip(
                                     key: ValueKey('devolucion_${v['id']}'),
-                                    message: 'Tiene una devolución por revisar',
+                                    message: 'Tiene devolución',
                                     child: const Icon(Icons.assignment_return, size: 20, color: naranjaOdai),
                                   ),
                               ]),

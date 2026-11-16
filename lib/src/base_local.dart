@@ -224,6 +224,18 @@ class Cola {
     return filas.map(Operacion.desdeFila).toList();
   }
 
+  /// Clientes nuevos que Odoo ya creó: su resultado trae la visita real (`visita_id`) que reemplaza al id
+  /// provisional que usaban las pantallas.
+  Future<List<Operacion>> altasHechas() async {
+    final filas = await _db.query(
+      'cola',
+      where: 'tipo = ? AND estado = ?',
+      whereArgs: ['cliente_nuevo', EstadoCola.hecho],
+      orderBy: 'orden',
+    );
+    return filas.map(Operacion.desdeFila).toList();
+  }
+
   Future<int> contarPendientes() async {
     final r = await _db.rawQuery('SELECT COUNT(*) AS n FROM cola WHERE estado = ?', [EstadoCola.pendiente]);
     return (r.first['n'] as int?) ?? 0;

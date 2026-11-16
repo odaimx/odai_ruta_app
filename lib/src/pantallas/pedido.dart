@@ -25,6 +25,9 @@ class PantallaPedido extends StatefulWidget {
 class _PantallaPedidoState extends State<PantallaPedido> {
   Ruta? _ruta;
   Map? _visita;
+
+  /// La visita en Odoo (un cliente nuevo ya enviado deja su id provisional por el real).
+  int get _vid => _ruta?.idReal(widget.visitaId) ?? widget.visitaId;
   final _lineas = <Linea>[];
   final _uomElegido = <int, int>{};
 
@@ -78,7 +81,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
       return;
     }
     if (!mounted) return;
-    await _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId));
+    await _ir(PantallaSinVenta(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: _vid));
     if (mounted && _ruta != null && _visita != null && _ruta!.estado(_visita!) == 'sin_venta') Navigator.pop(context);
   }
 
@@ -110,16 +113,8 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     super.dispose();
   }
 
-  void _agregar(Map producto, {int? uomId, double cantidad = 1}) {
-    setState(() {
-      final existente = _lineas.where((l) => l.productId == producto['id'] && l.uomId == uomId);
-      if (existente.isNotEmpty) {
-        existente.first.cantidad += cantidad;
-      } else {
-        _lineas.add(Linea(producto: producto, cantidad: cantidad, uomId: uomId));
-      }
-    });
-  }
+  void _agregar(Map producto, {int? uomId, double cantidad = 1}) =>
+      _poner(producto, uomId, _cantidad(producto, uomId) + cantidad);
 
   Future<void> _escanear() async {
     final codigo = await escanear(context, titulo: 'Escanear producto');
@@ -142,10 +137,10 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     final ruta = _ruta!;
     final v = _visita!;
     final moneda = ruta.moneda(widget.jornadaId);
-    final total = moneda.redondear(ruta.total(widget.visitaId, _lineas));
+    final total = moneda.redondear(ruta.total(_vid, _lineas));
     final credito = (v['credito'] as Map?) ?? const {};
     final disponible = credito['disponible_ruta'];
-    if (!_contado && disponible is num && total > disponible - ruta.pedidoEnCola(widget.visitaId)) {
+    if (!_contado && disponible is num && total > disponible - ruta.pedidoEnCola(_vid)) {
       final seguir = await confirmar(
         context,
         'Crédito insuficiente',
@@ -158,12 +153,12 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     setState(() => _enviando = true);
     try {
       final uuid = await widget.motor.registrar('pedido', {
-        'visita_id': widget.visitaId,
+        'visita_id': _vid,
         'lineas': _lineas.map((l) => l.paraOdoo()).toList(),
         'nota': _nota.text.trim(),
         'contado': _contado,
         'factura': _factura,
-        'subtotal': moneda.redondear(ruta.subtotal(widget.visitaId, _lineas)),
+        'subtotal': moneda.redondear(ruta.subtotal(_vid, _lineas)),
         'total': total,
         'sin_senal': !widget.motor.conSenal,
       });
@@ -175,7 +170,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
           barrierDismissible: false,
           builder: (_) => _CobroAlVender(
             motor: widget.motor,
-            visitaId: widget.visitaId,
+            visitaId: _vid,
             pedidoUuid: uuid,
             total: total,
             moneda: moneda,
@@ -204,7 +199,36 @@ class _PantallaPedidoState extends State<PantallaPedido> {
 
   double _cantidad(Map producto, int? uomId) => _linea(producto, uomId)?.cantidad ?? 0;
 
+  /// Factor de la unidad (embalaje) contra la unidad del producto.
+  static double _factor(Map producto, int? uomId) {
+    if (uomId == null) return 1;
+    final u = ((producto['uoms'] as List?) ?? const []).whereType<Map>().where((u) => u['id'] == uomId).firstOrNull;
+    return (u?['factor'] as num?)?.toDouble() ?? 1;
+  }
+
+  /// Kits que se pueden armar con la existencia de sus componentes (null: no es kit o no se sabe).
+  static int? _armables(Map producto) =>
+      ((producto['kit'] as List?) ?? const []).isEmpty ? null : (producto['existencia'] as num?)?.floor();
+
   void _poner(Map producto, int? uomId, double cantidad) {
+    final armables = _armables(producto);
+    if (armables != null && cantidad > 0) {
+      // Lo de este kit en otras unidades también cuenta.
+      final otras = _lineas
+          .where((l) => l.productId == producto['id'] && l.uomId != uomId)
+          .fold(0.0, (s, l) => s + l.cantidad * _factor(producto, l.uomId));
+      final pedidos = otras + cantidad * _factor(producto, uomId);
+      if (armables <= 0) {
+        avisar(context, 'No hay existencia para armar ${producto['name']}: falta un componente.', error: true);
+        return;
+      }
+      if (pedidos > armables + 1e-9) {
+        avisar(context, 'Solo hay existencia para $armables kits de ${producto['name']}.', error: true);
+        final maximo = ((armables - otras) / _factor(producto, uomId)).floorToDouble();
+        if (maximo <= 0) return;
+        cantidad = maximo;
+      }
+    }
     setState(() {
       final l = _linea(producto, uomId);
       if (cantidad <= 0) {
@@ -244,6 +268,9 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     if (r != null) _poner(producto, uomId, r);
   }
 
+  /// "1.0" como lo pide la oficina para los componentes del kit.
+  static String _numero(Object? n) => n is num ? n.toDouble().toStringAsFixed(n == n.roundToDouble() ? 1 : 2) : '$n';
+
   static String _textoCantidad(double c) => c == c.roundToDouble() ? '${c.toInt()}' : '$c';
 
   /// Un producto con atributos en una sola tarjeta: arriba su nombre, luego un renglón por atributo (sabor,
@@ -280,39 +307,35 @@ class _PantallaPedidoState extends State<PantallaPedido> {
       if (mejor != null) setState(() => _variante[plantilla] = mejor!['id'] as int);
     }
 
-    final selector = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Un desplegable por atributo (sabor, tamaño...): no llena la tarjeta de botones.
+    final selector = Wrap(
+      spacing: 8,
+      runSpacing: 6,
       children: [
         for (var i = 0; i < nombres.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text('${nombres[i]}:', style: const TextStyle(fontSize: 14, color: Color(0xFF333333))),
-                for (final valor in {
-                  for (final v in todas)
-                    if (valores(v).length > i) valores(v)[i],
-                })
-                  _chip(
-                    valor,
-                    elegida: actuales.length > i && actuales[i] == valor,
-                    // Atenuado si no existe con lo demás que está elegido (al tocarlo cambia lo demás).
-                    existe: todas.any((v) {
-                      final vs = valores(v);
-                      if (vs.length <= i || vs[i] != valor) return false;
-                      for (var j = 0; j < vs.length && j < actuales.length; j++) {
-                        if (j != i && vs[j] != actuales[j]) return false;
-                      }
-                      return true;
-                    }),
-                    key: ValueKey('atributo_${plantilla}_${i}_$valor'),
-                    onTap: () => elegir(i, valor),
-                  ),
-              ],
-            ),
+          _desplegable(
+            nombres[i],
+            [
+              for (final valor in {
+                for (final v in todas)
+                  if (valores(v).length > i) valores(v)[i],
+              })
+                (
+                  valor,
+                  // Atenuado si no existe con lo demás que está elegido (al elegirlo cambia lo demás).
+                  todas.any((v) {
+                    final vs = valores(v);
+                    if (vs.length <= i || vs[i] != valor) return false;
+                    for (var j = 0; j < vs.length && j < actuales.length; j++) {
+                      if (j != i && vs[j] != actuales[j]) return false;
+                    }
+                    return true;
+                  }),
+                ),
+            ],
+            actuales.length > i ? actuales[i] : null,
+            key: ValueKey('atributo_${plantilla}_$i'),
+            onChanged: (valor) => elegir(i, valor),
           ),
       ],
     );
@@ -329,30 +352,52 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     );
   }
 
-  Widget _chip(String nombre, {required bool elegida, bool existe = true, required VoidCallback onTap, Key? key}) =>
-      InkWell(
-        key: key,
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 36),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: elegida ? lavanda : Colors.white,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: elegida ? moradoOdai : bordeMorado, width: elegida ? 1.6 : 1),
-          ),
-          child: Text(
-            nombre,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: elegida ? FontWeight.w700 : FontWeight.w500,
-              color: existe ? const Color(0xFF111111) : const Color(0xFF9E9E9E),
+  Widget _desplegable(
+    String atributo,
+    List<(String, bool)> opciones,
+    String? elegido, {
+    required ValueChanged<String> onChanged,
+    Key? key,
+  }) => Container(
+    key: key,
+    padding: const EdgeInsets.only(left: 10, right: 4),
+    decoration: BoxDecoration(
+      color: lavanda,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: bordeMorado),
+    ),
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: opciones.any((o) => o.$1 == elegido) ? elegido : null,
+        isDense: true,
+        borderRadius: BorderRadius.circular(8),
+        hint: Text(atributo),
+        selectedItemBuilder: (_) => [
+          for (final o in opciones)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                '$atributo: ${o.$1}',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF111111)),
+              ),
             ),
-          ),
-        ),
-      );
+        ],
+        items: [
+          for (final o in opciones)
+            DropdownMenuItem(
+              value: o.$1,
+              child: Text(
+                o.$1,
+                style: TextStyle(fontSize: 15, color: o.$2 ? const Color(0xFF111111) : const Color(0xFF9E9E9E)),
+              ),
+            ),
+        ],
+        onChanged: (v) {
+          if (v != null) onChanged(v);
+        },
+      ),
+    ),
+  );
 
   Widget _fila(Ruta ruta, Moneda moneda, Map p, {String? titulo, Widget? selector, String? nota}) {
     final uoms = ((p['uoms'] as List?) ?? const []).whereType<Map>().toList();
@@ -360,6 +405,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
     final unidad = uomId == null ? '${p['uom']}' : '${uoms.firstWhere((u) => u['id'] == uomId)['name']}';
     final cantidad = _cantidad(p, uomId);
     final kit = ((p['kit'] as List?) ?? const []).whereType<Map>().toList();
+    final armables = _armables(p);
     final enCarrito = _lineas.where((l) => l.productId == p['id']).fold(0.0, (s, l) => s + l.cantidad);
     final mostrarFoto =
         ruta.config(widget.jornadaId)['imagenes'] == true ||
@@ -415,16 +461,26 @@ class _PantallaPedidoState extends State<PantallaPedido> {
                   (titulo ?? '${p['name']}').toUpperCase(),
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF222222)),
                 ),
-                ?selector,
-                if (selector != null) const SizedBox(height: 4),
+                // El precio abajo del nombre; luego los atributos.
                 Text(
-                  '${moneda(ruta.precio(widget.visitaId, p, uomId: uomId))} / $unidad',
+                  '${moneda(ruta.precio(_vid, p, uomId: uomId))} / $unidad',
                   style: const TextStyle(fontSize: 16, color: Color(0xFF222222)),
                 ),
+                if (selector != null) Padding(padding: const EdgeInsets.only(top: 6), child: selector),
                 if (kit.isNotEmpty)
                   Text(
-                    'Kit: ${kit.map((k) => '${k['cantidad']} ${k['name']}').join(', ')}',
+                    'KIT: ${kit.map((k) => '${_numero(k['cantidad'])} ${k['name']}').join(', ')}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF333333)),
+                  ),
+                if (armables != null)
+                  Text(
+                    armables <= 0 ? 'Sin existencia para armarlo' : 'Alcanza para $armables',
+                    key: ValueKey('armables_${p['id']}'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: armables <= 0 ? rojoOdai : const Color(0xFF333333),
+                    ),
                   ),
                 if (uoms.isNotEmpty)
                   Padding(
@@ -459,7 +515,8 @@ class _PantallaPedidoState extends State<PantallaPedido> {
               height: 46,
               child: OutlinedButton(
                 key: ValueKey('agregar_${p['id']}'),
-                onPressed: () => _poner(p, uomId, 1),
+                // Kit incompleto: no se puede vender.
+                onPressed: armables != null && armables <= 0 ? null : () => _poner(p, uomId, 1),
                 style: OutlinedButton.styleFrom(backgroundColor: lavanda, padding: EdgeInsets.zero),
                 child: const Icon(Icons.add, size: 36, color: Color(0xFF111111)),
               ),
@@ -519,7 +576,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
             refrescar(() {});
           }
 
-          final total = ruta.total(widget.visitaId, _lineas);
+          final total = ruta.total(_vid, _lineas);
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(c).viewInsets.bottom),
             child: ConstrainedBox(
@@ -535,7 +592,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
                       title: Text('${l.producto['name']}'),
                       subtitle: Text(
                         '${_textoCantidad(l.cantidad)} ${l.unidad} × '
-                        '${moneda(ruta.precio(widget.visitaId, l.producto, uomId: l.uomId))}',
+                        '${moneda(ruta.precio(_vid, l.producto, uomId: l.uomId))}',
                       ),
                       trailing: IconButton(
                         tooltip: 'Quitar',
@@ -600,13 +657,35 @@ class _PantallaPedidoState extends State<PantallaPedido> {
   @override
   Widget build(BuildContext context) {
     final ruta = _ruta;
-    final v = _visita;
-    if (ruta == null || v == null) {
+    final visita = _visita;
+    if (ruta == null) {
       return Scaffold(
         appBar: AppBar(),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
+    // Reparto no vende; a un cliente con bloqueo total no se le vende (solo se le cobra).
+    final noVende = visita == null
+        ? 'No se encontró el cliente en el celular. Toque Actualizar en la lista de clientes.'
+        : ruta.esReparto(widget.jornadaId)
+        ? 'Esta ruta es de reparto: aquí no se levantan pedidos.'
+        : ruta.bloqueoTotal(visita)
+        ? 'A este cliente no se le vende en ruta, solo se le cobra.'
+              '${ruta.motivoBloqueo(visita).isEmpty ? '' : '\nMotivo: ${ruta.motivoBloqueo(visita)}'}'
+        : null;
+    if (noVende != null || visita == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(noVende ?? '', key: const ValueKey('no_vende'), textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 17)),
+          ),
+        ),
+      );
+    }
+    final v = visita;
     final moneda = ruta.moneda(widget.jornadaId);
     final resultados = ruta.buscar(_busqueda);
     // Una tarjeta por producto: las variantes encontradas de un mismo producto van juntas.
@@ -625,12 +704,12 @@ class _PantallaPedidoState extends State<PantallaPedido> {
             .add(p);
       }
     }
-    final total = ruta.total(widget.visitaId, _lineas);
+    final total = ruta.total(_vid, _lineas);
     final piezas = _lineas.length;
     final credito = (v['credito'] as Map?) ?? const {};
     final disponible = credito['disponible_ruta'];
     final textoDisponible = credito['a_credito'] == true
-        ? (disponible is num ? moneda(disponible - ruta.pedidoEnCola(widget.visitaId)) : 'Sin límite')
+        ? (disponible is num ? moneda(disponible - ruta.pedidoEnCola(_vid)) : 'Sin límite')
         : 'Contado';
     final abierta = (ruta.jornada(widget.jornadaId)?['jornada'] as Map?)?['state'] == 'abierta';
     const chico = TextStyle(fontSize: 15, color: Color(0xFF111111));
@@ -647,14 +726,14 @@ class _PantallaPedidoState extends State<PantallaPedido> {
               Accion(
                 Icons.person,
                 'Ver ficha',
-                () => _ir(PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
+                () => _ir(PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: _vid)),
                 principal: true,
               ),
               if (abierta && ruta.cobra(widget.jornadaId))
                 Accion(
                   Icons.payments,
                   'Cobrar',
-                  () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)),
+                  () => _ir(PantallaCobro(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: _vid)),
                 ),
               if (abierta && ruta.estado(v) == 'pendiente') Accion(Icons.block, 'Sin venta', _sinVenta),
               Accion(Icons.edit, 'Modificar cliente', _modificarCliente),
@@ -672,7 +751,7 @@ class _PantallaPedidoState extends State<PantallaPedido> {
                 TableRow(
                   children: [
                     const Text('Por cobrar:  ', style: chico),
-                    Text(moneda(ruta.porCobrar(widget.visitaId)), style: chico, textAlign: TextAlign.right),
+                    Text(moneda(ruta.porCobrar(_vid)), style: chico, textAlign: TextAlign.right),
                   ],
                 ),
               ],
@@ -747,7 +826,11 @@ class _CobroAlVenderState extends State<_CobroAlVender> {
   List<Map> get _diarios => ((widget.config['diarios'] as List?) ?? const []).whereType<Map>().toList();
   bool get _registra => widget.config['cobro_venta'] == 'anticipo';
   Map? get _diarioElegido => _diarios.where((d) => d['id'] == _diario).firstOrNull;
-  bool get _esTransferencia => _diarioElegido?['efectivo'] == false;
+  bool get _hayEfectivo => _diarios.any((d) => d['efectivo'] == true);
+
+  /// Con transferencia o tarjeta no hay cambio: se cobra el total con su referencia. Si Odoo no tiene ninguna forma
+  /// de cobro en efectivo, igual se captura con cuánto paga y el cambio (y se avisa que falta Efectivo).
+  bool get _esTransferencia => _registra && _hayEfectivo && _diarioElegido?['efectivo'] == false;
 
   @override
   void initState() {
@@ -809,6 +892,24 @@ class _CobroAlVenderState extends State<_CobroAlVender> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (_registra && _diarios.length == 1)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 12),
+                  child: Text('Forma de pago: ${_diarios.first['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ),
+            if (_registra && _diarios.isNotEmpty && !_hayEfectivo)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'En Odoo no hay forma de cobro en efectivo para la ruta. Agréguela en Ajustes › Venta en ruta › '
+                  'Formas de cobro.',
+                  key: ValueKey('falta_efectivo'),
+                  style: TextStyle(color: naranjaOdai),
+                ),
+              ),
             if (_registra && _diarios.length > 1) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<int>(

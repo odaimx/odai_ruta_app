@@ -155,6 +155,20 @@ void main() {
     expect(find.byKey(const ValueKey('pin_21')), findsOneWidget);
     expect(find.byKey(const ValueKey('sin_ubicacion')), findsOneWidget);
     expect(find.byType(PolylineLayer), findsOneWidget, reason: 'Clientes unidos en orden y trayecto');
+    // En el mapa no va el buscador ni el lector: "Buscar cliente" en el menú ⋮ lo abre y deja todos los pines.
+    expect(find.byKey(const ValueKey('buscar_lista')), findsNothing);
+    expect(find.byKey(const ValueKey('escanear')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('acciones')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Buscar cliente'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('buscar_mapa')), findsOneWidget);
+    expect(find.byKey(const ValueKey('escanear')), findsNothing);
+    await tester.enterText(find.byType(TextField), 'zzz-ninguno');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('pin_20')), findsOneWidget, reason: 'Buscar no quita pines del mapa');
   });
 
   test('color de la ruta para el carrito', () {

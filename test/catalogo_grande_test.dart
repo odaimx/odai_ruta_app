@@ -144,11 +144,16 @@ void main() {
     expect(find.byKey(const ValueKey('producto_2')), findsNothing);
     expect(find.text('PRODUCTO 1'), findsOneWidget);
     // Tamaño 2 L: pasa a la variante (Cola, 2 L), id 2.
-    await tester.tap(find.byKey(const ValueKey('atributo_1_1_2 L')));
+    // Un desplegable por atributo.
+    await tester.tap(find.byKey(const ValueKey('atributo_1_1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2 L').last);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('producto_2')), findsOneWidget);
     // Sabor Limón conservando 2 L: (Limón, 2 L), id 4.
-    await tester.tap(find.byKey(const ValueKey('atributo_1_0_Limón')));
+    await tester.tap(find.byKey(const ValueKey('atributo_1_0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Limón').last);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('producto_4')), findsOneWidget);
     // Embalaje y agregar.
@@ -158,9 +163,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('1 producto'), findsOneWidget);
     // Otra variante: se ve lo que ya va en el pedido.
-    await tester.tap(find.byKey(const ValueKey('atributo_1_0_Cola')));
+    await tester.tap(find.byKey(const ValueKey('atributo_1_0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cola').last);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('producto_2')), findsOneWidget);
     expect(find.textContaining('En el pedido: 1 Limón 2 L'), findsOneWidget);
+  });
+
+  testWidgets('kits: el incompleto no se vende y no pasa de lo que se puede armar', (tester) async {
+    late Motor motor;
+    await tester.runAsync(
+      () async => motor = (await motorCon([
+        {'id': 900, 'name': 'Kit vaso', 'precio': 10.0, 'uom': 'Pieza', 'existencia': 2,
+         'kit': [{'name': 'Vaso', 'cantidad': 1.0}, {'name': 'Hielo', 'cantidad': 1.0}]},
+        {'id': 901, 'name': 'Kit incompleto', 'precio': 10.0, 'uom': 'Pieza', 'existencia': 0,
+         'kit': [{'name': 'Tapa', 'cantidad': 1.0}]},
+      ])).$1,
+    );
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: PantallaPedido(motor: motor, jornadaId: 3, visitaId: 10)));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    await tester.pumpAndSettle();
+    expect(find.text('KIT: 1.0 Vaso, 1.0 Hielo'), findsOneWidget);
+    expect(find.text('Sin existencia para armarlo'), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(find.byKey(const ValueKey('agregar_901'))).onPressed, isNull);
+    await tester.tap(find.byKey(const ValueKey('agregar_900')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    await tester.pump();
+    expect(find.text('Solo hay existencia para 2 kits de Kit vaso.'), findsOneWidget);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+    expect(find.descendant(of: find.byKey(const ValueKey('producto_900')), matching: find.text('2')), findsOneWidget);
   });
 }

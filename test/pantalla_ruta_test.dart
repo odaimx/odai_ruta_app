@@ -30,6 +30,10 @@ void main() {
                 'id': 12, 'cliente': 'Abarrotes Sagitario', 'estado': 'pendiente', 'secuencia': 3,
                 'credito': {'estado': 'block'}, 'devoluciones': 1,
               },
+              {
+                'id': 13, 'cliente': 'Cremería Sin Venta', 'estado': 'pendiente', 'secuencia': 4,
+                'credito': {'estado': 'block'}, 'bloqueo': {'total': true, 'motivo': 'Cheque devuelto'},
+              },
             ],
           }
         ],
@@ -46,6 +50,8 @@ void main() {
     expect(find.byKey(const ValueKey('bloqueado_12')), findsOneWidget, reason: 'Cliente bloqueado en rojo');
     expect(find.byKey(const ValueKey('devolucion_12')), findsOneWidget, reason: 'Devolución por revisar en naranja');
     expect(find.byKey(const ValueKey('bloqueado_10')), findsNothing);
+    expect(find.byKey(const ValueKey('sin_venta_13')), findsOneWidget, reason: 'Bloqueo total: otro icono');
+    expect(find.byKey(const ValueKey('bloqueado_13')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('acciones')));
     await tester.pumpAndSettle();
     expect(find.text('Cerrar jornada'), findsOneWidget, reason: 'Las demás acciones van en el menú');
@@ -64,7 +70,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('filtro_vista')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Todos 3').last);
+    await tester.tap(find.text('Todos 4').last);
     await tester.pumpAndSettle();
     expect(find.text('Lupita'), findsOneWidget);
     expect(find.text('Don Pepe'), findsOneWidget);
