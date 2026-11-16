@@ -27,6 +27,14 @@ Color colorEstado(String estado, {bool siguiente = false}) {
   return const Color(0xFF5F5F5F);
 }
 
+/// Color '#RRGGBB' que manda Odoo, o null si no viene o no se entiende.
+Color? colorDeHex(String texto) {
+  final limpio = texto.replaceFirst('#', '');
+  if (limpio.length != 6) return null;
+  final valor = int.tryParse(limpio, radix: 16);
+  return valor == null ? null : Color(0xFF000000 | valor);
+}
+
 /// Abre Google Maps o Waze para llegar al cliente (sin costo: es la app del celular).
 Future<void> comoLlegar(BuildContext context, LatLng punto) async {
   final app = await showModalBottomSheet<String>(
@@ -229,6 +237,8 @@ class _MapaRutaState extends State<MapaRuta> {
     final url = '${teselas['url'] ?? ''}'.isNotEmpty
         ? '${teselas['url']}'
         : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    // Carrito y trayecto del color de la ruta (lo manda Odoo); sin color, el morado de siempre.
+    final colorRuta = colorDeHex('${teselas['color'] ?? ''}') ?? moradoOdai;
     final siguiente = widget.visitas.where((v) => widget.ruta.estado(v) == 'pendiente').firstOrNull;
     final marcadores = <Marker>[];
     final puntos = <LatLng>[];
@@ -277,7 +287,7 @@ class _MapaRutaState extends State<MapaRuta> {
           child: Container(
             key: const ValueKey('carrito'),
             decoration: BoxDecoration(
-              color: moradoOdai,
+              color: colorRuta,
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: const [BoxShadow(color: Color(0x73000000), blurRadius: 6)],

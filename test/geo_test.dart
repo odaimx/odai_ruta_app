@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:odai_ruta/src/almacen.dart';
 import 'package:odai_ruta/src/base_local.dart';
 import 'package:odai_ruta/src/motor.dart';
+import 'package:odai_ruta/src/pantallas/mapa_ruta.dart';
 import 'package:odai_ruta/src/pantallas/ruta.dart';
 import 'package:odai_ruta/src/ruta.dart';
 import 'package:odai_ruta/src/ubicacion.dart';
@@ -154,5 +155,11 @@ void main() {
     expect(find.byKey(const ValueKey('pin_21')), findsOneWidget);
     expect(find.byKey(const ValueKey('sin_ubicacion')), findsOneWidget);
     expect(find.byType(PolylineLayer), findsOneWidget, reason: 'Clientes unidos en orden y trayecto');
+  });
+
+  test('color de la ruta para el carrito', () {
+    expect(colorDeHex('#30C381'), const Color(0xFF30C381));
+    expect(colorDeHex(''), isNull);
+    expect(colorDeHex('rojo'), isNull);
   });
 }
