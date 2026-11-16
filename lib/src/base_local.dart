@@ -60,23 +60,86 @@ class BaseLocal {
 
   // ---------------------------------------------------------------- datos (lo que bajó)
 
+  /// Un valor grande (el catálogo de miles de productos) se guarda en partes: Android no lee de SQLite un
+  /// renglón de más de ~2 MB. El renglón principal solo dice cuántas partes tiene.
+  static const tamanoParte = 400000;
+  static const _marcaPartes = '__odai_partes__';
+
+  /// Lo grande ya leído queda en memoria (el catálogo se usa en cada pantalla y leerlo tarda).
+  final _memoria = <String, Object?>{};
+
   Future<Object?> leer(String clave) async {
+    if (_memoria.containsKey(clave)) return _memoria[clave];
     final filas = await db.query('datos', where: 'clave = ?', whereArgs: [clave], limit: 1);
-    return filas.isEmpty ? null : jsonDecode(filas.first['valor'] as String);
+    if (filas.isEmpty) return null;
+    var texto = filas.first['valor'] as String;
+    final partes = _partes(texto);
+    if (partes != null) {
+      final trozos = StringBuffer();
+      for (var i = 0; i < partes; i++) {
+        final f = await db.query('datos', where: 'clave = ?', whereArgs: ['$clave#$i'], limit: 1);
+        if (f.isEmpty) return null;
+        trozos.write(f.first['valor'] as String);
+      }
+      texto = trozos.toString();
+    }
+    final valor = jsonDecode(texto);
+    if (texto.length > tamanoParte) _memoria[clave] = valor;
+    return valor;
   }
 
-  Future<void> escribir(String clave, Object? valor) => db.insert(
-      'datos', {'clave': clave, 'valor': jsonEncode(valor)}, conflictAlgorithm: ConflictAlgorithm.replace);
+  static int? _partes(String texto) {
+    if (texto.length > 60 || !texto.contains(_marcaPartes)) return null;
+    final m = jsonDecode(texto);
+    return m is Map && m[_marcaPartes] is int ? m[_marcaPartes] as int : null;
+  }
+
+  static Future<void> _guardar(DatabaseExecutor ex, String clave, Object? valor) async {
+    final texto = jsonEncode(valor);
+    // Las partes anteriores ("clave#0", "clave#1"...): por rango, para usar el índice de la clave.
+    await ex.delete('datos', where: 'clave >= ? AND clave < ?', whereArgs: ['$clave#', '$clave\$']);
+    if (texto.length <= tamanoParte) {
+      await ex.insert('datos', {'clave': clave, 'valor': texto}, conflictAlgorithm: ConflictAlgorithm.replace);
+      return;
+    }
+    var n = 0;
+    for (var i = 0; i < texto.length; i += tamanoParte, n++) {
+      final fin = i + tamanoParte > texto.length ? texto.length : i + tamanoParte;
+      await ex.insert('datos', {
+        'clave': '$clave#$n',
+        'valor': texto.substring(i, fin),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await ex.insert('datos', {
+      'clave': clave,
+      'valor': jsonEncode({_marcaPartes: n}),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> escribir(String clave, Object? valor) async {
+    _memoria.remove(clave);
+    await db.transaction((txn) => _guardar(txn, clave, valor));
+  }
 
   /// Escribe varias claves en una sola transacción: o queda la bajada completa o no queda nada.
-  Future<void> escribirVarios(Map<String, Object?> valores) => db.transaction((txn) async {
-        for (final e in valores.entries) {
-          await txn.insert('datos', {'clave': e.key, 'valor': jsonEncode(e.value)},
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      });
+  Future<void> escribirVarios(Map<String, Object?> valores) async {
+    for (final clave in valores.keys) {
+      _memoria.remove(clave);
+    }
+    await db.transaction((txn) async {
+      for (final e in valores.entries) {
+        await _guardar(txn, e.key, e.value);
+      }
+    });
+  }
 
-  Future<void> borrarDato(String clave) => db.delete('datos', where: 'clave = ?', whereArgs: [clave]);
+  Future<void> borrarDato(String clave) async {
+    _memoria.remove(clave);
+    await db.transaction((txn) async {
+      await txn.delete('datos', where: 'clave = ?', whereArgs: [clave]);
+      await txn.delete('datos', where: 'clave >= ? AND clave < ?', whereArgs: ['$clave#', '$clave\$']);
+    });
+  }
 
   Future<void> close() => db.close();
 }
@@ -104,17 +167,17 @@ class Operacion {
   final Map<String, Object?>? resultado;
 
   factory Operacion.desdeFila(Map<String, Object?> fila) => Operacion(
-        uuid: fila['uuid'] as String,
-        tipo: fila['tipo'] as String,
-        capturado: fila['capturado'] as String,
-        datos: (jsonDecode(fila['datos'] as String) as Map).cast<String, Object?>(),
-        estado: fila['estado'] as String,
-        intentos: fila['intentos'] as int,
-        mensaje: fila['mensaje'] as String?,
-        resultado: fila['resultado'] == null
-            ? null
-            : (jsonDecode(fila['resultado'] as String) as Map).cast<String, Object?>(),
-      );
+    uuid: fila['uuid'] as String,
+    tipo: fila['tipo'] as String,
+    capturado: fila['capturado'] as String,
+    datos: (jsonDecode(fila['datos'] as String) as Map).cast<String, Object?>(),
+    estado: fila['estado'] as String,
+    intentos: fila['intentos'] as int,
+    mensaje: fila['mensaje'] as String?,
+    resultado: fila['resultado'] == null
+        ? null
+        : (jsonDecode(fila['resultado'] as String) as Map).cast<String, Object?>(),
+  );
 
   /// Como la espera `POST /subir`.
   Map<String, Object?> paraSubir() => {'uuid': uuid, 'tipo': tipo, 'capturado': capturado, 'datos': datos};
@@ -151,8 +214,13 @@ class Cola {
   }
 
   Future<List<Operacion>> pendientes({int limite = 50}) async {
-    final filas = await _db.query('cola',
-        where: 'estado = ?', whereArgs: [EstadoCola.pendiente], orderBy: 'orden', limit: limite);
+    final filas = await _db.query(
+      'cola',
+      where: 'estado = ?',
+      whereArgs: [EstadoCola.pendiente],
+      orderBy: 'orden',
+      limit: limite,
+    );
     return filas.map(Operacion.desdeFila).toList();
   }
 
@@ -163,10 +231,12 @@ class Cola {
 
   /// Rechazadas o con error que el vendedor aún no ha visto.
   Future<List<Operacion>> porRevisar() async {
-    final filas = await _db.query('cola',
-        where: 'estado IN (?, ?) AND resuelto IS NULL',
-        whereArgs: [EstadoCola.rechazado, EstadoCola.error],
-        orderBy: 'orden');
+    final filas = await _db.query(
+      'cola',
+      where: 'estado IN (?, ?) AND resuelto IS NULL',
+      whereArgs: [EstadoCola.rechazado, EstadoCola.error],
+      orderBy: 'orden',
+    );
     return filas.map(Operacion.desdeFila).toList();
   }
 
@@ -202,16 +272,22 @@ class Cola {
           await txn.update('cola', valores, where: 'uuid = ?', whereArgs: [uuid]);
         } else {
           await txn.rawUpdate(
-              'UPDATE cola SET intentos = intentos + 1, mensaje = ?, resultado = ?, '
-              'estado = CASE WHEN intentos + 1 >= ? THEN ? ELSE estado END WHERE uuid = ?',
-              [valores['mensaje'], valores['resultado'], maxIntentos, EstadoCola.error, uuid]);
+            'UPDATE cola SET intentos = intentos + 1, mensaje = ?, resultado = ?, '
+            'estado = CASE WHEN intentos + 1 >= ? THEN ? ELSE estado END WHERE uuid = ?',
+            [valores['mensaje'], valores['resultado'], maxIntentos, EstadoCola.error, uuid],
+          );
         }
       }
     });
   }
 
   /// Borra lo ya hecho de más de [dias] días, para que la base no crezca sin fin.
-  Future<int> limpiar({int dias = 15}) => _db.delete('cola',
-      where: 'estado = ? AND capturado < ?',
-      whereArgs: [EstadoCola.hecho, horaOdoo(_reloj().subtract(Duration(days: dias)))]);
+  Future<int> limpiar({int dias = 15}) => _db.delete(
+    'cola',
+    where: 'estado = ? AND capturado < ?',
+    whereArgs: [
+      EstadoCola.hecho,
+      horaOdoo(_reloj().subtract(Duration(days: dias))),
+    ],
+  );
 }

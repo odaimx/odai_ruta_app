@@ -443,19 +443,49 @@ class Ruta {
     (s, l) => s + precio(visitaId, l.producto, uomId: l.uomId) * l.cantidad * factorIva(l.productId),
   );
 
+  /// Texto de búsqueda de cada producto, ya en minúsculas (con miles de productos no se arma en cada tecla).
+  late final List<String> _textos = [
+    for (final p in catalogo) '${p['name']} ${p['code']} ${p['plantilla_nombre'] ?? ''}'.toLowerCase(),
+  ];
+
+  /// Variantes de cada plantilla (productos con atributos), en el orden del catálogo.
+  late final Map<int, List<Map>> _variantes = () {
+    final r = <int, List<Map>>{};
+    for (final p in catalogo) {
+      final t = p['plantilla'];
+      if (t is int && ((p['atributos'] as List?) ?? const []).isNotEmpty) r.putIfAbsent(t, () => []).add(p);
+    }
+    return r;
+  }();
+
+  /// Las variantes del mismo producto que [producto] (él incluido); vacío si no tiene atributos.
+  List<Map> variantes(Map producto) {
+    final t = producto['plantilla'];
+    final lista = t is int ? _variantes[t] : null;
+    return lista != null && lista.length > 1 ? lista : const [];
+  }
+
   /// Busca por nombre, clave o código de barras. Un código de barras exacto devuelve también su embalaje.
-  List<Map> buscar(String texto) {
+  /// Con [limite] productos; las variantes de un producto cuentan como uno.
+  List<Map> buscar(String texto, {int limite = 80}) {
     final t = texto.trim().toLowerCase();
-    if (t.isEmpty) return catalogo.take(60).toList();
-    return catalogo
-        .where(
-          (p) =>
-              '${p['name']}'.toLowerCase().contains(t) ||
-              '${p['code']}'.toLowerCase().contains(t) ||
-              ((p['barcodes'] as Map?) ?? const {}).containsKey(texto.trim()),
-        )
-        .take(60)
-        .toList();
+    final codigo = texto.trim();
+    final r = <Map>[];
+    final grupos = <int>{};
+    var tarjetas = 0;
+    for (var i = 0; i < catalogo.length; i++) {
+      final p = catalogo[i];
+      if (t.isNotEmpty && !_textos[i].contains(t) && !((p['barcodes'] as Map?) ?? const {}).containsKey(codigo)) {
+        continue;
+      }
+      final nueva = variantes(p).isEmpty || grupos.add(p['plantilla'] as int);
+      if (nueva) {
+        if (tarjetas == limite) break;
+        tarjetas++;
+      }
+      r.add(p);
+    }
+    return r;
   }
 
   /// Producto y embalaje de un código escaneado.

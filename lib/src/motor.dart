@@ -678,6 +678,9 @@ class Motor extends ChangeNotifier {
       final id = p['id'];
       final version = '${p['imagen'] ?? ''}';
       if (id is! int) continue;
+      // La variante que usa la foto de su producto no la baja: la baja el producto que la representa.
+      final de = p['imagen_id'];
+      if (de is int && de != id) continue;
       if (version.isEmpty) {
         if (versiones.remove('$id') != null) {
           await base!.borrarDato('img:$id');
@@ -688,7 +691,8 @@ class Motor extends ChangeNotifier {
       }
     }
     try {
-      for (var i = 0; i < faltan.length && i < 400; i += 40) {
+      // Hasta 1,200 por sincronización (30 llamadas); lo que falte baja en la siguiente.
+      for (var i = 0; i < faltan.length && i < 1200; i += 40) {
         final lote = faltan.sublist(i, i + 40 > faltan.length ? faltan.length : i + 40);
         final r = await api!.imagenes(lote);
         final guardar = <String, Object?>{};
