@@ -271,14 +271,18 @@ class _MapaRutaState extends State<MapaRuta> {
       marcadores.add(
         Marker(
           point: _yo!,
-          width: 22,
-          height: 22,
+          width: 36,
+          height: 36,
+          // El vendedor con un carrito, para distinguirlo de los clientes.
           child: Container(
+            key: const ValueKey('carrito'),
             decoration: BoxDecoration(
               color: moradoOdai,
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: const [BoxShadow(color: Color(0x73000000), blurRadius: 6)],
             ),
+            child: const Icon(Icons.local_shipping, color: Colors.white, size: 20),
           ),
         ),
       );
