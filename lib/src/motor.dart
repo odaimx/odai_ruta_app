@@ -384,8 +384,10 @@ class Motor extends ChangeNotifier {
     final toca =
         u == null || p.momento.difference(u.momento) >= cada || distanciaM(u.lat, u.lon, p.lat, p.lon) >= metros;
     if (!toca) return;
+    final jornada = _recorridoJornada!;
     _ultimoPunto = p;
     _puntos.add(p);
+    await _agregarAlTrayecto(jornada, p);
     _puntosDesde ??= reloj();
     if (_puntos.length >= 10 || reloj().difference(_puntosDesde!) >= const Duration(minutes: 5)) {
       await enviarPuntos();
@@ -400,6 +402,36 @@ class Motor extends ChangeNotifier {
     _puntos.clear();
     _puntosDesde = null;
     await registrar('puntos', {'jornada_id': jornada, 'puntos': lote});
+  }
+
+  static const _maxTrayecto = 3000;
+
+  /// El trayecto del día en el celular: los puntos del recorrido de la jornada, guardados en la base local para
+  /// dibujarlos en el mapa aunque no haya señal o se haya cerrado la app.
+  Future<List<Posicion>> trayecto(int jornadaId) async {
+    final datos = await base?.leer('trayecto_$jornadaId');
+    if (datos is! List) return const [];
+    return [
+      for (final d in datos.whereType<List>())
+        if (d.length >= 3)
+          Posicion(
+            (d[0] as num).toDouble(),
+            (d[1] as num).toDouble(),
+            capturada: DateTime.fromMillisecondsSinceEpoch((d[2] as num).toInt()),
+          ),
+    ];
+  }
+
+  Future<void> _agregarAlTrayecto(int jornadaId, Posicion p) async {
+    final b = base;
+    if (b == null) return;
+    final datos = await b.leer('trayecto_$jornadaId');
+    final lista = datos is List ? List<Object?>.from(datos) : <Object?>[];
+    lista.add([p.lat, p.lon, p.momento.millisecondsSinceEpoch]);
+    await b.escribir(
+      'trayecto_$jornadaId',
+      lista.length > _maxTrayecto ? lista.sublist(lista.length - _maxTrayecto) : lista,
+    );
   }
 
   void detenerRecorrido() {

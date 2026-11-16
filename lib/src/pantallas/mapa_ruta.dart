@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -61,7 +63,9 @@ Future<void> comoLlegar(BuildContext context, LatLng punto) async {
   }
 }
 
-/// Mapa de la ruta: los clientes numerados en el orden de visita, con color por estado. Tocar uno muestra su ficha.
+/// Mapa de la ruta: los clientes numerados en el orden de visita, con color por estado, unidos con una línea en ese
+/// orden. Con el seguimiento GPS también el trayecto del día y la posición del vendedor, que se mueve sola mientras el
+/// mapa está abierto. Tocar un cliente muestra su ficha.
 class MapaRuta extends StatefulWidget {
   const MapaRuta({
     super.key,
@@ -85,8 +89,47 @@ class MapaRuta extends StatefulWidget {
 }
 
 class _MapaRutaState extends State<MapaRuta> {
+  /// Cada cuánto se mueve el punto del vendedor mientras el mapa está abierto.
+  static const vivoCada = Duration(seconds: 10);
+
   final _control = MapController();
   LatLng? _yo;
+  List<LatLng> _trayecto = const [];
+  Timer? _vivo;
+
+  bool get _seguimiento => widget.ruta.seguimiento(widget.jornadaId);
+
+  @override
+  void initState() {
+    super.initState();
+    // Con el seguimiento la app ya tiene permiso de ubicación: el punto se mueve solo desde que se abre el mapa.
+    if (_seguimiento) {
+      unawaited(_actualizarVivo());
+      _iniciarVivo();
+    }
+  }
+
+  @override
+  void dispose() {
+    _vivo?.cancel();
+    super.dispose();
+  }
+
+  void _iniciarVivo() {
+    _vivo ??= Timer.periodic(vivoCada, (_) => _actualizarVivo());
+  }
+
+  /// Lee la posición y el trayecto guardado; no mueve la cámara (el vendedor puede estar viendo otra parte).
+  Future<void> _actualizarVivo() async {
+    final motor = widget.motor;
+    final p = await motor.ubicador?.actual();
+    final trayecto = _seguimiento ? await motor.trayecto(widget.jornadaId) : const [];
+    if (!mounted) return;
+    setState(() {
+      if (p != null) _yo = LatLng(p.lat, p.lon);
+      _trayecto = [for (final t in trayecto) LatLng(t.lat, t.lon)];
+    });
+  }
 
   Future<void> _centrarEnMi() async {
     final p = await widget.motor.ubicador?.actual();
@@ -97,6 +140,7 @@ class _MapaRutaState extends State<MapaRuta> {
     }
     setState(() => _yo = LatLng(p.lat, p.lon));
     _control.move(_yo!, 16);
+    _iniciarVivo();
   }
 
   void _ficha(Map v, int numero) {
@@ -256,6 +300,19 @@ class _MapaRutaState extends State<MapaRuta> {
               urlTemplate: url,
               maxZoom: _num(teselas['max_zoom']) > 0 ? _num(teselas['max_zoom']) : 19,
               userAgentPackageName: 'lat.odai.ruta',
+            ),
+            PolylineLayer(
+              polylines: [
+                if (puntos.length > 1)
+                  Polyline(
+                    points: puntos,
+                    strokeWidth: 3,
+                    color: const Color(0xAA5F6B7A),
+                    pattern: StrokePattern.dashed(segments: const [10, 7]),
+                  ),
+                if (_trayecto.length > 1)
+                  Polyline(points: [..._trayecto, ?_yo], strokeWidth: 4, color: moradoOdai.withValues(alpha: 0.75)),
+              ],
             ),
             MarkerLayer(markers: marcadores),
             SimpleAttributionWidget(source: Text('${teselas['atribucion'] ?? '© OpenStreetMap'}')),

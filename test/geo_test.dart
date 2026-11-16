@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:odai_ruta/src/almacen.dart';
 import 'package:odai_ruta/src/base_local.dart';
@@ -121,6 +122,9 @@ void main() {
     final puntos = (await motor.cola!.pendientes(limite: 100)).where((o) => o.tipo == 'puntos').toList();
     expect(puntos, hasLength(1));
     expect((puntos.single.datos['puntos'] as List), hasLength(2), reason: 'El segundo punto sin moverse no cuenta');
+    final trayecto = await motor.trayecto(4);
+    expect(trayecto, hasLength(2), reason: 'El trayecto del día queda en el celular para dibujarlo');
+    expect(trayecto.last.lat, closeTo(ubicador.lat, 1e-9));
   });
 
   testWidgets('ruta: cambiar a mapa y ordenar con flechas', (tester) async {
@@ -149,5 +153,6 @@ void main() {
     expect(find.byKey(const ValueKey('pin_20')), findsOneWidget);
     expect(find.byKey(const ValueKey('pin_21')), findsOneWidget);
     expect(find.byKey(const ValueKey('sin_ubicacion')), findsOneWidget);
+    expect(find.byType(PolylineLayer), findsOneWidget, reason: 'Clientes unidos en orden y trayecto');
   });
 }
