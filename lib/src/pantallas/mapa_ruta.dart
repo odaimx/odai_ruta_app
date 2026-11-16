@@ -178,7 +178,14 @@ class _MapaRutaState extends State<MapaRuta> {
               ),
               if (comercial.isNotEmpty) Text('${v['cliente']}'),
               if ('${v['direccion'] ?? ''}'.isNotEmpty) Text('${v['direccion']}'),
-              if ('${v['telefono'] ?? ''}'.isNotEmpty) Text('Tel. ${v['telefono']}'),
+              if ('${v['telefono'] ?? ''}'.isNotEmpty)
+                TextButton.icon(
+                  key: const ValueKey('mapa_telefono'),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                  icon: const Icon(Icons.phone, size: 18),
+                  label: Text('${v['telefono']}'),
+                  onPressed: () => launchUrl(Uri(scheme: 'tel', path: '${v['telefono']}'.replaceAll(' ', ''))),
+                ),
               const SizedBox(height: 6),
               Text(
                 etiquetasEstado[ruta.estado(v)] ?? ruta.estado(v),

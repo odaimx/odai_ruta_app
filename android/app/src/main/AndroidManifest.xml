@@ -74,5 +74,10 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="waze"/>
         </intent>
+        <!-- Llamar al cliente desde la ficha del mapa. -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
     </queries>
 </manifest>
