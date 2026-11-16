@@ -235,7 +235,7 @@ class _PantallaPinState extends State<PantallaPin> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: i < _pin.length ? moradoOdai : Colors.white,
-                            border: Border.all(color: const Color(0xFF333333), width: 1.5),
+                            border: Border.all(color: moradoOdai, width: 2),
                           ),
                         ),
                       ),

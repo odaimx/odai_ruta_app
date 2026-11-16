@@ -190,6 +190,11 @@ class Ruta {
   Operacion? devolucionEnCola(int visitaId, int pedidoId) =>
       _pendientesDe(visitaId).where((o) => o.tipo == 'devolucion' && o.datos['pedido_id'] == pedidoId).firstOrNull;
 
+  /// Cliente con devolución por revisar en la oficina (lo dice Odoo) o capturada que espera enviarse.
+  bool tieneDevolucion(Map visita) =>
+      ((visita['devoluciones'] as num?) ?? 0) > 0 ||
+      _pendientesDe(visita['id'] as int).any((o) => o.tipo == 'devolucion');
+
   /// Motivos de devolución que bajaron con la jornada.
   List<Map> motivosDevolucion(int jornadaId) =>
       ((jornada(jornadaId)?['motivos_devolucion'] as List?) ?? const []).whereType<Map>().toList();

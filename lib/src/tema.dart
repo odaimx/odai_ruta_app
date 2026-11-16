@@ -15,6 +15,9 @@ const azulOdai = Color(0xFF2F8FE0);
 /// El azul del triángulo del logo de ODAI.
 const azulLogo = Color(0xFF4DA6F2);
 const verdeOdai = Color(0xFF43A047);
+/// Avisos que piden atención sin ser error (jornada de más días, devolución por revisar).
+const naranjaOdai = Color(0xFFEF6C00);
+const rojoOdai = Color(0xFFE53935);
 /// Compatibilidad: algunos marcos usan el gris oscuro.
 const bordeOdai = Color(0xFF616161);
 const azulMarino = moradoOscuro;

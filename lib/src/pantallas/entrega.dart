@@ -180,7 +180,7 @@ class _PantallaEntregaState extends State<PantallaEntrega> {
                     builder: (_) =>
                         PantallaCliente(motor: widget.motor, jornadaId: widget.jornadaId, visitaId: widget.visitaId)));
             _cargar();
-          }),
+          }, principal: true),
           if (abierta && porCobrar > 0 && ruta.cobra(widget.jornadaId))
             Accion(Icons.payments, 'Cobrar notas ${moneda(porCobrar)}', () async {
               await Navigator.push(

@@ -80,10 +80,8 @@ class _PantallaInicioState extends State<PantallaInicio> {
       bottomNavigationBar: const PieOdai(),
       body: Column(children: [
         BarraAcciones(motor: motor, acciones: [
+          // Sincronizar ya está en la tarjeta de abajo; "Actualizar" queda al final del menú.
           if (motor.pin != null) Accion(Icons.lock, 'Bloquear', motor.bloquearPantalla, principal: true),
-          Accion(Icons.sync, motor.sincronizando ? 'Sincronizando...' : 'Sincronizar',
-              motor.sincronizando ? null : () => motor.sincronizar(),
-              principal: motor.pin == null),
           Accion(Icons.password, 'Cambiar mi PIN',
               () => Navigator.push(context, MaterialPageRoute(builder: (_) => PantallaNuevoPin(motor: motor)))),
         ]),
@@ -452,6 +450,14 @@ class _TarjetaJornada extends StatelessWidget {
                 '${fechaCorta(jornada['fecha'])}    ${dos(visitas.length)} Clientes    $pendientes por visitar'
                 '${jornada['state'] == 'abierta' ? '' : '    cerrada'}',
                 style: tema.textTheme.bodyMedium),
+            // Jornada de más días que la ruta (y avisos de licencia) en naranja, debajo de la ruta.
+            if ('${datos['licencia_aviso'] ?? ''}'.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('${datos['licencia_aviso']}'.trim(),
+                    key: ValueKey('aviso_jornada_$id'),
+                    style: const TextStyle(fontSize: 14, color: naranjaOdai, fontWeight: FontWeight.w600)),
+              ),
           ]),
         ),
         const Icon(Icons.keyboard_double_arrow_right, size: 34, color: Color(0xFF111111)),

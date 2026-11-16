@@ -26,6 +26,10 @@ void main() {
             'visitas': [
               {'id': 10, 'cliente': 'Lupita', 'estado': 'pendiente', 'secuencia': 1},
               {'id': 11, 'cliente': 'Don Pepe', 'estado': 'pedido', 'secuencia': 2},
+              {
+                'id': 12, 'cliente': 'Abarrotes Sagitario', 'estado': 'pendiente', 'secuencia': 3,
+                'credito': {'estado': 'block'}, 'devoluciones': 1,
+              },
             ],
           }
         ],
@@ -38,22 +42,29 @@ void main() {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('accion_Nuevo cliente')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nuevo_cliente')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bloqueado_12')), findsOneWidget, reason: 'Cliente bloqueado en rojo');
+    expect(find.byKey(const ValueKey('devolucion_12')), findsOneWidget, reason: 'Devolución por revisar en naranja');
+    expect(find.byKey(const ValueKey('bloqueado_10')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('acciones')));
     await tester.pumpAndSettle();
     expect(find.text('Cerrar jornada'), findsOneWidget, reason: 'Las demás acciones van en el menú');
-    expect(find.text('Sincronizar'), findsOneWidget);
+    expect(find.text('Actualizar'), findsOneWidget, reason: 'Actualizar al final de todos los menús');
     await tester.tapAt(const Offset(5, 1990));
     await tester.pumpAndSettle();
     expect(find.text('Lupita'), findsOneWidget);
     expect(find.text('Don Pepe'), findsNothing, reason: 'Los visitados no estorban al buscar');
 
-    await tester.tap(find.text('Visitados  1'));
+    await tester.tap(find.byKey(const ValueKey('filtro_vista')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visitados 1').last);
     await tester.pumpAndSettle();
     expect(find.text('Lupita'), findsNothing);
     expect(find.text('Don Pepe'), findsOneWidget);
 
-    await tester.tap(find.text('Todos  2'));
+    await tester.tap(find.byKey(const ValueKey('filtro_vista')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Todos 3').last);
     await tester.pumpAndSettle();
     expect(find.text('Lupita'), findsOneWidget);
     expect(find.text('Don Pepe'), findsOneWidget);

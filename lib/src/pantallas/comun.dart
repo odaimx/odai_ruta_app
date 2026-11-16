@@ -371,7 +371,14 @@ class BarraAcciones extends StatelessWidget {
   Widget build(BuildContext context) {
     const alto = Size(0, 46);
     final principal = acciones.where((a) => a.principal).firstOrNull;
-    final resto = acciones.where((a) => a != principal).toList();
+    final m = motor;
+    final resto = [
+      ...acciones.where((a) => a != principal),
+      // Al final de todos los menús: enviar lo pendiente y bajar lo último de Odoo.
+      if (m != null)
+        Accion(Icons.refresh, m.sincronizando ? 'Actualizando...' : 'Actualizar',
+            m.sincronizando ? null : () => m.sincronizar()),
+    ];
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
@@ -417,6 +424,77 @@ class BarraAcciones extends StatelessWidget {
         Expanded(child: centro == null ? const SizedBox.shrink() : Align(alignment: Alignment.centerRight, child: centro)),
         if (motor != null) ...[const SizedBox(width: 10), IndicadorSenal(motor: motor!)],
       ]),
+    );
+  }
+}
+
+/// Botón cuadrado de la barra (agregar cliente, ordenar, mapa): icono grande con marco y fondo lavanda.
+class BotonCuadro extends StatelessWidget {
+  const BotonCuadro(
+      {super.key, required this.icono, required this.tooltip, required this.onPressed, this.activo = false});
+
+  final IconData icono;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool activo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Tooltip(
+        message: tooltip,
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: OutlinedButton(
+            onPressed: onPressed,
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.zero,
+              backgroundColor: activo ? moradoOdai : lavanda,
+              side: const BorderSide(color: bordeMorado, width: 1.2),
+            ),
+            child: Icon(icono, size: 28, color: activo ? Colors.white : const Color(0xFF111111)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Filtro desplegable de la barra ("Pendientes 25 ▾").
+class FiltroDesplegable<T> extends StatelessWidget {
+  const FiltroDesplegable({super.key, required this.opciones, required this.elegido, required this.onChanged});
+
+  final List<(T, String)> opciones;
+  final T elegido;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.only(left: 10, right: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(radioMarco),
+        border: Border.all(color: bordeMorado, width: 1.2),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: elegido,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF111111)),
+          style: const TextStyle(fontSize: 16, color: Color(0xFF111111), fontWeight: FontWeight.w600),
+          items: [
+            for (final o in opciones)
+              DropdownMenuItem<T>(value: o.$1, child: Text(o.$2, overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: (v) {
+            if (v != null) onChanged(v);
+          },
+        ),
+      ),
     );
   }
 }

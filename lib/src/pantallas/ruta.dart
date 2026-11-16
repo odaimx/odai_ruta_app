@@ -231,60 +231,75 @@ class _PantallaRutaState extends State<PantallaRuta> {
       bottomNavigationBar: const PieOdai(),
       body: Column(
         children: [
+          // Misma barra en la lista y en el mapa: filtro desplegable, agregar cliente, ordenar y mapa.
           BarraAcciones(
             motor: widget.motor,
-            acciones: [
-              if (abierta && !reparto) Accion(Icons.person_add, 'Nuevo cliente', _clienteNuevo, principal: true),
-              Accion(
-                Icons.sync,
-                widget.motor.sincronizando ? 'Sincronizando...' : 'Sincronizar',
-                widget.motor.sincronizando ? null : () => widget.motor.sincronizar(),
-              ),
-              if (abierta) Accion(Icons.flag, 'Cerrar jornada', _cerrar),
-            ],
+            acciones: [if (abierta) Accion(Icons.flag, 'Cerrar jornada', _cerrar)],
+            centro: Row(
+              children: [
+                Flexible(
+                  child: FiltroDesplegable<String>(
+                    key: const ValueKey('filtro_vista'),
+                    opciones: [
+                      ('pendientes', 'Pendientes $pendientesN'),
+                      ('visitados', 'Visitados ${todas.length - pendientesN}'),
+                      ('todos', 'Todos ${todas.length}'),
+                    ],
+                    elegido: _vista,
+                    onChanged: (v) => setState(() {
+                      _vista = v;
+                      if (v != 'pendientes') _ordenando = false;
+                    }),
+                  ),
+                ),
+                if (abierta && !reparto)
+                  BotonCuadro(
+                    key: const ValueKey('nuevo_cliente'),
+                    icono: Icons.person_add_alt_1,
+                    tooltip: 'Nuevo cliente',
+                    onPressed: _clienteNuevo,
+                  ),
+                if (abierta)
+                  BotonCuadro(
+                    key: const ValueKey('ordenar'),
+                    icono: _ordenando ? Icons.check : Icons.swap_vert,
+                    tooltip: _ordenando ? 'Listo' : 'Cambiar orden de visita',
+                    activo: _ordenando,
+                    // Se ordena en la lista de pendientes, sin búsqueda.
+                    onPressed: () async {
+                      if (_mapa) await _cambiarVista(false);
+                      _buscar.clear();
+                      setState(() {
+                        _filtro = '';
+                        _vista = 'pendientes';
+                        _ordenando = !_ordenando;
+                      });
+                    },
+                  ),
+                BotonCuadro(
+                  key: const ValueKey('vista_mapa'),
+                  icono: _mapa ? Icons.view_list : Icons.location_on_outlined,
+                  tooltip: _mapa ? 'Ver lista' : 'Ver mapa',
+                  activo: _mapa,
+                  onPressed: () => _cambiarVista(!_mapa),
+                ),
+              ],
+            ),
           ),
           if (aviso != null && aviso.isNotEmpty)
-            MaterialBanner(content: Text(aviso), actions: const [SizedBox.shrink()]),
+            Container(
+              width: double.infinity,
+              color: const Color(0xFFFFF3E0),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Text(aviso, style: const TextStyle(color: naranjaOdai, fontWeight: FontWeight.w600)),
+            ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 14, 12, 10),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: Buscador(
               controller: _buscar,
               hint: 'Buscar cliente',
               onChanged: (v) => setState(() => _filtro = v),
               onEscanear: _escanear,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6, right: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Filtros<String>(
-                    opciones: [
-                      ('pendientes', 'Pendientes  $pendientesN'),
-                      ('visitados', 'Visitados  ${todas.length - pendientesN}'),
-                      ('todos', 'Todos  ${todas.length}'),
-                    ],
-                    elegido: _vista,
-                    onChanged: (v) => setState(() => _vista = v),
-                  ),
-                ),
-                if (!_mapa && abierta && _vista == 'pendientes' && t.isEmpty)
-                  IconButton(
-                    key: const ValueKey('ordenar'),
-                    tooltip: _ordenando ? 'Listo' : 'Cambiar orden de visita',
-                    isSelected: _ordenando,
-                    onPressed: () => setState(() => _ordenando = !_ordenando),
-                    icon: const Icon(Icons.swap_vert, size: 28, color: Color(0xFF111111)),
-                    selectedIcon: const Icon(Icons.check_circle, size: 28, color: moradoOdai),
-                  ),
-                IconButton(
-                  key: const ValueKey('vista_mapa'),
-                  tooltip: _mapa ? 'Ver lista' : 'Ver mapa',
-                  onPressed: () => _cambiarVista(!_mapa),
-                  icon: Icon(_mapa ? Icons.view_list : Icons.map_outlined, size: 28, color: moradoOscuro),
-                ),
-              ],
             ),
           ),
           if (_mapa)
@@ -308,6 +323,7 @@ class _PantallaRutaState extends State<PantallaRuta> {
                   final porCobrar = ruta.porCobrar(v['id'] as int);
                   final comercial = '${v['comercial'] ?? ''}'.trim();
                   final bloqueado = (v['credito'] as Map?)?['estado'] == 'block';
+                  final devolucion = ruta.tieneDevolucion(v);
                   final chico = Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF222222));
                   return TarjetaOdai(
                     key: ValueKey('cliente_${v['id']}'),
@@ -344,11 +360,22 @@ class _PantallaRutaState extends State<PantallaRuta> {
                           children: [
                             Text(etiquetasEstado[estado] ?? estado, style: chico),
                             if (ruta.enCola(v)) Text('por enviar', style: chico),
-                            if (bloqueado)
-                              const Tooltip(
-                                message: 'Crédito bloqueado',
-                                child: Icon(Icons.credit_card_off, size: 18, color: Color(0xFFE53935)),
-                              ),
+                            if (bloqueado || devolucion)
+                              Row(mainAxisSize: MainAxisSize.min, children: [
+                                if (bloqueado)
+                                  Tooltip(
+                                    key: ValueKey('bloqueado_${v['id']}'),
+                                    message: 'Crédito bloqueado',
+                                    child: const Icon(Icons.block, size: 20, color: rojoOdai),
+                                  ),
+                                if (bloqueado && devolucion) const SizedBox(width: 4),
+                                if (devolucion)
+                                  Tooltip(
+                                    key: ValueKey('devolucion_${v['id']}'),
+                                    message: 'Tiene una devolución por revisar',
+                                    child: const Icon(Icons.assignment_return, size: 20, color: naranjaOdai),
+                                  ),
+                              ]),
                           ],
                         ),
                         const SizedBox(width: 6),

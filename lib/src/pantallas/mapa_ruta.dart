@@ -177,7 +177,16 @@ class _MapaRutaState extends State<MapaRuta> {
                 style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: Color(0xFF111111)),
               ),
               if (comercial.isNotEmpty) Text('${v['cliente']}'),
-              if ('${v['direccion'] ?? ''}'.isNotEmpty) Text('${v['direccion']}'),
+              if ('${v['direccion'] ?? ''}'.isNotEmpty)
+                Padding(
+                  key: const ValueKey('mapa_direccion'),
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.location_on, size: 18, color: moradoOscuro),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text('${v['direccion']}')),
+                  ]),
+                ),
               if ('${v['telefono'] ?? ''}'.isNotEmpty)
                 TextButton.icon(
                   key: const ValueKey('mapa_telefono'),
@@ -332,7 +341,7 @@ class _MapaRutaState extends State<MapaRuta> {
                     pattern: StrokePattern.dashed(segments: const [10, 7]),
                   ),
                 if (_trayecto.length > 1)
-                  Polyline(points: [..._trayecto, ?_yo], strokeWidth: 4, color: moradoOdai.withValues(alpha: 0.75)),
+                  Polyline(points: [..._trayecto, ?_yo], strokeWidth: 4, color: colorRuta.withValues(alpha: 0.8)),
               ],
             ),
             MarkerLayer(markers: marcadores),
